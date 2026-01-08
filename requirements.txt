@@ -1,0 +1,15 @@
+# X-Ray SDK and API Dependencies
+
+# Flask API
+flask>=3.0.0
+flask-sqlalchemy>=3.1.0
+flask-cors>=4.0.0
+psycopg2-binary>=2.9.9
+
+# CrewAI and LLM
+crewai>=0.1.0
+openai>=1.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+requests>=2.31.0
