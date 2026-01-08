@@ -88,9 +88,6 @@ print(result["analysis"])
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/ingest` | POST | Submit run for analysis |
-| `/api/runs` | GET | List all runs |
-| `/api/runs/<id>` | GET | Get run with steps |
-| `/api/analyze/<id>` | POST | Re-trigger analysis |
 | `/health` | GET | Health check |
 
 ## Project Structure
@@ -115,4 +112,4 @@ print(result["analysis"])
 - **End-of-pipeline integration**: Add steps as your pipeline runs, send at the end
 - **Auto-summarization**: Large outputs (>50K chars) automatically sampled to 30 random items
 - **Spool fallback**: If API is down, saves to `.xray_spool/` for later submission
-- **AI-powered analysis**: Uses Cerebras LLM to identify semantic mismatches and faulty steps
+- **AI-powered analysis**: Uses Cerebras LLM with a 2-step sliding window only (even for small runs) to identify semantic mismatches and faulty steps

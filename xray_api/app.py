@@ -12,7 +12,6 @@ load_dotenv()
 
 from .models import db
 from .routes.ingest import ingest_bp
-from .routes.query import query_bp
 
 
 def create_app():
@@ -33,7 +32,6 @@ def create_app():
     
     # Register blueprints
     app.register_blueprint(ingest_bp)
-    app.register_blueprint(query_bp)
     
     # Health check endpoint
     @app.route('/health')

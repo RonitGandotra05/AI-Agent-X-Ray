@@ -5,6 +5,7 @@ Uses sliding window approach (2 steps at a time) to stay under token limits.
 
 import os
 import json
+import logging
 from typing import Dict, Any, List
 from openai import OpenAI
 
@@ -22,6 +23,7 @@ class XRayAnalyzer:
         self.api_key = os.getenv('CEREBRAS_API_KEY')
         self.base_url = os.getenv('CEREBRAS_BASE_URL', 'https://api.cerebras.ai/v1')
         self.model = os.getenv('CEREBRAS_MODEL', 'llama-3.3-70b')
+        self.log_thinking = os.getenv('XRAY_LOG_THINKING', 'true').lower() in ('1', 'true', 'yes')
         
         if not self.api_key:
             raise ValueError("CEREBRAS_API_KEY environment variable not set")
@@ -30,6 +32,19 @@ class XRayAnalyzer:
             api_key=self.api_key,
             base_url=self.base_url
         )
+
+        self.logger = logging.getLogger(__name__)
+        if not self.logger.handlers:
+            logging.basicConfig(level=logging.DEBUG if self.log_thinking else logging.INFO)
+        if self.log_thinking:
+            root_logger = logging.getLogger()
+            root_logger.setLevel(logging.DEBUG)
+            for handler in root_logger.handlers:
+                handler.setLevel(logging.DEBUG)
+            self.logger.setLevel(logging.DEBUG)
+            # Keep analyzer output concise by muting noisy HTTP client debug logs.
+            for noisy_logger in ("openai", "httpx", "httpcore", "werkzeug"):
+                logging.getLogger(noisy_logger).setLevel(logging.WARNING)
     
     def analyze_run(self, run_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -49,30 +64,28 @@ class XRayAnalyzer:
         if not steps:
             return {"error": "No steps to analyze"}
         
-        # Sort steps by order
         sorted_steps = sorted(steps, key=lambda s: s.get('step_order', 0))
         
-        # If only 1-2 steps, analyze directly
-        if len(sorted_steps) <= self.WINDOW_SIZE:
-            return self._analyze_steps(sorted_steps, run_data)
-        
-        # Sliding window analysis
         window_results = []
-        for i in range(len(sorted_steps) - 1):
-            window = sorted_steps[i:i + self.WINDOW_SIZE]
-            result = self._analyze_window(window, i, run_data)
+        # Always use sliding windows (even for <= WINDOW_SIZE) to keep a single analysis mode
+        if len(sorted_steps) <= self.WINDOW_SIZE:
+            result = self._analyze_window(sorted_steps, 0, run_data)
             window_results.append(result)
-            
-            # If we found a faulty step, stop early
-            if result.get('faulty_step'):
-                break
+        else:
+            for i in range(len(sorted_steps) - 1):
+                window = sorted_steps[i:i + self.WINDOW_SIZE]
+                result = self._analyze_window(window, i, run_data)
+                window_results.append(result)
+                if result.get('faulty_step'):
+                    break
         
-        # Combine results
         return self._combine_window_results(window_results, sorted_steps)
     
     def _analyze_window(self, window_steps: List[Dict], window_index: int, run_data: Dict) -> Dict[str, Any]:
         """Analyze a window of 2 steps"""
         prompt = self._build_window_prompt(window_steps, window_index, run_data)
+        if self.log_thinking:
+            self.logger.info("[analyzer] window_prompt window=%s size=%s", window_index + 1, len(prompt))
         
         try:
             response = self.client.chat.completions.create(
@@ -86,55 +99,16 @@ class XRayAnalyzer:
             )
             
             result_text = response.choices[0].message.content
-            return self._parse_analysis_response(result_text)
+            if self.log_thinking:
+                self.logger.info("[analyzer] window_raw_response chars=%s", len(result_text or ""))
+            parsed = self._parse_analysis_response(result_text)
+            if self.log_thinking:
+                self.logger.info("[analyzer] window_parsed=%s", parsed)
+            return parsed
             
         except Exception as e:
             return {"error": str(e), "faulty_step": None}
     
-    def _analyze_steps(self, steps: List[Dict], run_data: Dict) -> Dict[str, Any]:
-        """Analyze all steps when total is <= WINDOW_SIZE"""
-        prompt = self._build_analysis_prompt(steps, run_data)
-        
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": self._get_system_prompt()},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1,
-                max_tokens=1000
-            )
-            
-            result_text = response.choices[0].message.content
-            return self._parse_analysis_response(result_text)
-            
-        except Exception as e:
-            return {"error": str(e), "faulty_step": None, "reason": "Analysis failed"}
-    
-    def _get_system_prompt(self) -> str:
-        """System prompt for full analysis"""
-        return """You are an expert debugging assistant that analyzes multi-step AI pipeline executions.
-
-Your task is to trace through each step and identify where things went wrong.
-
-For each step, examine:
-1. Does the output logically follow from the input?
-2. Are there semantic mismatches (e.g., phone case input producing laptop-related output)?
-3. Was too much or too little data filtered?
-4. Does the step's reasoning (if provided in outputs) make sense?
-
-Respond in valid JSON:
-{
-    "faulty_step": "step_name or null if no issues",
-    "faulty_step_order": step_number or null,
-    "reason": "Clear explanation of what went wrong",
-    "suggestion": "How to fix the issue",
-    "all_steps_analysis": [
-        {"step": "step_name", "status": "ok|warning|error", "note": "brief note"}
-    ]
-}"""
-
     def _get_window_system_prompt(self) -> str:
         """System prompt for window analysis (2 steps)"""
         return """You are analyzing a WINDOW of 2 consecutive steps from a pipeline.
@@ -169,29 +143,6 @@ Respond in valid JSON:
             parts.append("")
         
         parts.append("Analyze the transition between these steps. Is the data flow correct?")
-        return "\n".join(parts)
-    
-    def _build_analysis_prompt(self, steps: List[Dict], run_data: Dict) -> str:
-        """Build prompt for full analysis"""
-        pipeline_name = run_data.get('pipeline_name', 'unknown')
-        metadata = run_data.get('metadata', {})
-        
-        parts = [
-            f"## Pipeline: {pipeline_name}",
-            f"## Metadata: {json.dumps(metadata)}",
-            "",
-            "## Steps Executed:",
-            ""
-        ]
-        
-        for step in steps:
-            parts.append(f"### Step {step.get('step_order', '?')}: {step.get('step_name', 'unknown')}")
-            parts.append(f"**Inputs:** {json.dumps(step.get('inputs', {}), indent=2, default=str)}")
-            parts.append(f"**Outputs:** {json.dumps(step.get('outputs', {}), indent=2, default=str)}")
-            parts.append("")
-        
-        parts.append("---")
-        parts.append("Identify the FIRST step where something went wrong (if any).")
         return "\n".join(parts)
     
     def _combine_window_results(self, window_results: List[Dict], all_steps: List[Dict]) -> Dict[str, Any]:

@@ -101,24 +101,3 @@ def ingest_run():
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-
-@ingest_bp.route('/api/ingest/batch', methods=['POST'])
-def ingest_batch():
-    """Ingest multiple runs at once"""
-    data = request.get_json()
-    
-    if not data or not isinstance(data.get('runs'), list):
-        return jsonify({"error": "Expected {runs: [...]}"}), 400
-    
-    results = []
-    for run_data in data['runs']:
-        # Reuse single ingest logic
-        with ingest_bp.test_request_context(
-            '/api/ingest',
-            method='POST',
-            json=run_data
-        ):
-            # This is a simplified approach - in production, refactor to share logic
-            pass
-    
-    return jsonify({"message": "Batch ingest not fully implemented yet"}), 501

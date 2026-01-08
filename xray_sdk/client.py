@@ -21,7 +21,7 @@ class XRayClient:
     
     DEFAULT_SPOOL_DIR = ".xray_spool"
     
-    def __init__(self, api_url: str, timeout: int = 60):
+    def __init__(self, api_url: str, timeout: int = 180):
         """
         Initialize the X-Ray client.
         
@@ -93,7 +93,7 @@ class XRayClient:
     
     def flush_spool(self, spool_dir: Optional[str] = None) -> Dict[str, Any]:
         """
-        Send all spooled runs to the API.
+        Send the newest spooled run to the API and delete all spooled files.
         
         Args:
             spool_dir: Directory containing spooled files
@@ -104,27 +104,33 @@ class XRayClient:
         spool_dir = Path(spool_dir or self.DEFAULT_SPOOL_DIR)
         if not spool_dir.exists():
             return {"flushed": 0, "failed": 0}
-        
-        results = {"flushed": 0, "failed": 0, "errors": []}
-        
-        for filepath in spool_dir.glob("*.json"):
-            try:
-                with open(filepath) as f:
-                    data = json.load(f)
-                
-                response = requests.post(
-                    f"{self.api_url}/api/ingest",
-                    json=data,
-                    timeout=self.timeout
-                )
-                response.raise_for_status()
-                
-                # Delete file after successful send
+
+        files = list(spool_dir.glob("*.json"))
+        if not files:
+            return {"flushed": 0, "failed": 0}
+
+        newest = max(files, key=lambda p: p.stat().st_mtime)
+        results = {"flushed": 0, "failed": 0, "errors": [], "sent_file": str(newest)}
+
+        try:
+            with open(newest) as f:
+                data = json.load(f)
+
+            response = requests.post(
+                f"{self.api_url}/api/ingest",
+                json=data,
+                timeout=self.timeout
+            )
+            response.raise_for_status()
+            response_json = response.json()
+            results["flushed"] = 1
+            results["response"] = response_json
+
+            # Delete all spooled files after successful send of newest.
+            for filepath in files:
                 filepath.unlink()
-                results["flushed"] += 1
-                
-            except Exception as e:
-                results["failed"] += 1
-                results["errors"].append({"file": str(filepath), "error": str(e)})
-        
+        except Exception as e:
+            results["failed"] = 1
+            results["errors"].append({"file": str(newest), "error": str(e)})
+
         return results

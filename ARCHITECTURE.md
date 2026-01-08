@@ -24,6 +24,8 @@ A lightweight debugging system for multi-step AI pipelines that captures executi
                         {faulty_step, reason, suggestion}
 ```
 
+  **Analysis strategy:** The analyzer always runs in a sliding window of 2 steps. Even when a run has only 1–2 steps, it still uses the same windowed path (single window in that case). There is no full-run mode.
+
 ## Data Model
 
 ### Entities
@@ -86,57 +88,6 @@ A lightweight debugging system for multi-step AI pipelines that captures executi
 }
 ```
 
-### Query Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/runs` | GET | List runs (filter by pipeline, status) |
-| `/api/runs/<id>` | GET | Get run with all steps |
-| `/api/runs/<id>/analysis` | GET | Get analysis result only |
-| `/api/analyze/<id>` | POST | Trigger re-analysis |
-
----
-
-## Debugging Walkthrough
-
-**Scenario:** A phone case matched against a laptop stand.
-
-1. **Query the run:** `GET /api/runs/{run_id}`
-2. **See all steps** with inputs/outputs
-3. **Check analysis result:**
-   ```json
-   {
-     "faulty_step": "keyword_generation",
-     "reason": "Generated 'laptop cover' which is unrelated to phone cases",
-     "suggestion": "Constrain keywords to product category"
-   }
-   ```
-4. **Trace data flow:**
-   - Step 1 outputs: `["phone case", "laptop cover"]` ← Bug here
-   - Step 2 searched with bad keyword, returned laptop items
-   - Step 3 didn't filter by category
-   - Step 4 selected laptop item
-
----
-
-## Queryability
-
-### Cross-Pipeline Queries
-
-To support queries like "Show me runs where filtering eliminated >90% of candidates":
-
-```sql
--- Steps table stores outputs as JSONB
-SELECT r.id, s.outputs->>'filtered_count', s.outputs->>'candidates_count'
-FROM steps s
-JOIN runs r ON s.run_id = r.id
-WHERE s.step_name ILIKE '%filter%'
-  AND (s.outputs->>'filtered_count')::int < (s.outputs->>'candidates_count')::int * 0.1;
-```
-
-**Developer Convention Required:** Use consistent key names like `candidates_count`, `filtered_count` in outputs.
-
----
 
 ## Performance & Scale
 
@@ -234,7 +185,6 @@ xray_api/
 ├── models.py        # SQLAlchemy models
 ├── routes/
 │   ├── ingest.py    # POST /api/ingest
-│   └── query.py     # GET endpoints
 └── agents/
     └── analyzer.py  # Cerebras AI analysis
 ```

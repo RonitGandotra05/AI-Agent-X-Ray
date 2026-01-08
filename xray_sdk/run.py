@@ -12,11 +12,13 @@ class XRayRun:
     """
     A complete run of a pipeline, containing multiple steps.
     
-    Automatically summarizes large outputs to prevent token limit issues.
+    Automatically summarizes large inputs/outputs to prevent token limit issues.
     """
     
-    MAX_OUTPUT_SIZE = 20000  # chars per step (~5K tokens) - keeps total under 65K token limit
-    SAMPLE_SIZE = 100        # number of items to keep in random sample
+    MAX_PAYLOAD_SIZE = 20000  # chars per step side (~5K tokens) - keeps total under 65K token limit
+    SAMPLE_SIZE = 100         # initial sample size per large list
+    MIN_SAMPLE_SIZE = 10      # floor for aggressive trimming when still oversized
+    STRING_TRUNCATE = 2000    # truncate very long strings to this many chars
     
     def __init__(self, pipeline_name: str, metadata: Optional[Dict[str, Any]] = None):
         """
@@ -37,32 +39,62 @@ class XRayRun:
         Args:
             step: The XRayStep to add
         """
-        # Auto-summarize if outputs too large
-        output_str = json.dumps(step.outputs, default=str)
-        if len(output_str) > self.MAX_OUTPUT_SIZE:
-            step.outputs = self._summarize(step.outputs)
+        step.inputs = self._ensure_within_budget(step.inputs)
+        step.outputs = self._ensure_within_budget(step.outputs)
         
         self.steps.append(step)
+
+    def _ensure_within_budget(self, data: Any) -> Any:
+        """Summarize data if it exceeds MAX_PAYLOAD_SIZE."""
+        if data is None:
+            return {}
+        try:
+            size = len(json.dumps(data, default=str))
+        except Exception:
+            size = self.MAX_PAYLOAD_SIZE + 1  # force summarization if not serializable
+        if size <= self.MAX_PAYLOAD_SIZE:
+            return data
+        return self._summarize_with_budget(data)
+
+    def _summarize_with_budget(self, data: Any) -> Any:
+        """Iteratively summarize until payload fits under MAX_PAYLOAD_SIZE."""
+        sample_size = self.SAMPLE_SIZE
+        summarized = data
+        while True:
+            summarized = self._summarize_once(summarized, sample_size)
+            size = len(json.dumps(summarized, default=str))
+            if size <= self.MAX_PAYLOAD_SIZE or sample_size <= self.MIN_SAMPLE_SIZE:
+                return summarized
+            sample_size = max(self.MIN_SAMPLE_SIZE, sample_size // 2)
     
-    def _summarize(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Structural summarization - keeps random 30 items from large lists.
-        
-        Args:
-            data: The data dict to summarize
-            
-        Returns:
-            Summarized data with large lists reduced to random samples
-        """
-        summarized = {}
-        for key, value in data.items():
-            if isinstance(value, list) and len(value) > self.SAMPLE_SIZE:
-                # Random sample of 30 items + total count
-                summarized[key] = random.sample(value, self.SAMPLE_SIZE)
-                summarized[f"{key}_total_count"] = len(value)
-            else:
-                summarized[key] = value
-        return summarized
+    def _summarize_once(self, data: Any, sample_size: int) -> Any:
+        """One-pass summarization with recursion and string truncation."""
+        if isinstance(data, dict):
+            summarized = {}
+            for key, value in data.items():
+                if isinstance(value, list):
+                    summarized_list, total_count = self._summarize_list(value, sample_size)
+                    summarized[key] = summarized_list
+                    if total_count is not None:
+                        summarized[f"{key}_total_count"] = total_count
+                else:
+                    summarized[key] = self._summarize_once(value, sample_size)
+            return summarized
+        if isinstance(data, list):
+            summarized_list, _ = self._summarize_list(data, sample_size)
+            return summarized_list
+        if isinstance(data, str) and len(data) > self.STRING_TRUNCATE:
+            overflow = len(data) - self.STRING_TRUNCATE
+            return f"{data[:self.STRING_TRUNCATE]}...[truncated {overflow} chars]"
+        return data
+    
+    def _summarize_list(self, items: List[Any], sample_size: int):
+        """Summarize a list: sample if large, recurse into elements."""
+        total_count = None
+        if len(items) > sample_size:
+            total_count = len(items)
+            items = random.sample(items, sample_size)
+        return [self._summarize_once(item, sample_size) for item in items], total_count
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert run to dictionary for JSON serialization"""
