@@ -8,6 +8,8 @@ competitor selection pipeline.
 import sys
 sys.path.insert(0, '.')
 
+"""Demo: competitor selection pipeline with multiple steps."""
+
 from xray_sdk import XRayClient, XRayRun, XRayStep
 
 
@@ -21,7 +23,8 @@ def main():
             "product_id": "ASIN123456",
             "product_title": "Premium Phone Case for iPhone 15",
             "category": "Cell Phone Accessories"
-        }
+        },
+        sample_size=20
     )
     
     # Step 1: Keyword Generation (HAS A BUG - generates "laptop cover")

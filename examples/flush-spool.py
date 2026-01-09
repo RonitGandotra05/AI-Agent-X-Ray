@@ -1,3 +1,5 @@
+"""Flush all spooled runs to the API."""
+
 from xray_sdk import XRayClient
 
 client = XRayClient("http://localhost:5000")

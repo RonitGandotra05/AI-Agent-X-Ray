@@ -65,8 +65,11 @@ class Step(db.Model):
     run_id = db.Column(db.String(36), db.ForeignKey('runs.id'), nullable=False)
     step_name = db.Column(db.String(255), nullable=False)
     step_order = db.Column(db.Integer, nullable=False)
+    step_description = db.Column(db.Text, nullable=True)
     inputs = db.Column(db.JSON, nullable=True)
     outputs = db.Column(db.JSON, nullable=True)
+    reasons = db.Column(db.JSON, nullable=True)
+    metrics = db.Column(db.JSON, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     def to_dict(self):
@@ -75,7 +78,10 @@ class Step(db.Model):
             "run_id": self.run_id,
             "step_name": self.step_name,
             "step_order": self.step_order,
+            "step_description": self.step_description,
             "inputs": self.inputs,
             "outputs": self.outputs,
+            "reasons": self.reasons,
+            "metrics": self.metrics,
             "created_at": self.created_at.isoformat() if self.created_at else None
         }

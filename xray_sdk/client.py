@@ -90,6 +90,56 @@ class XRayClient:
             json.dump(run.to_dict(), f, indent=2, default=str)
         
         return filepath
+
+    def list_pipelines(self) -> Dict[str, Any]:
+        """List all pipelines."""
+        response = requests.get(f"{self.api_url}/api/pipelines", timeout=self.timeout)
+        response.raise_for_status()
+        return response.json()
+
+    def list_runs(
+        self,
+        pipeline: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 50,
+    ) -> Dict[str, Any]:
+        """List runs with optional filters."""
+        params = {"limit": limit}
+        if pipeline:
+            params["pipeline"] = pipeline
+        if status:
+            params["status"] = status
+        response = requests.get(f"{self.api_url}/api/runs", params=params, timeout=self.timeout)
+        response.raise_for_status()
+        return response.json()
+
+    def get_run(self, run_id: str) -> Dict[str, Any]:
+        """Get a single run with all its steps."""
+        response = requests.get(f"{self.api_url}/api/runs/{run_id}", timeout=self.timeout)
+        response.raise_for_status()
+        return response.json()
+
+    def get_analysis(self, run_id: str) -> Dict[str, Any]:
+        """Get analysis result for a run."""
+        response = requests.get(f"{self.api_url}/api/runs/{run_id}/analysis", timeout=self.timeout)
+        response.raise_for_status()
+        return response.json()
+
+    def search_steps(
+        self,
+        step_name: Optional[str] = None,
+        pipeline: Optional[str] = None,
+        limit: int = 50,
+    ) -> Dict[str, Any]:
+        """Search steps across runs."""
+        params = {"limit": limit}
+        if step_name:
+            params["step_name"] = step_name
+        if pipeline:
+            params["pipeline"] = pipeline
+        response = requests.get(f"{self.api_url}/api/search/steps", params=params, timeout=self.timeout)
+        response.raise_for_status()
+        return response.json()
     
     def flush_spool(self, spool_dir: Optional[str] = None) -> Dict[str, Any]:
         """

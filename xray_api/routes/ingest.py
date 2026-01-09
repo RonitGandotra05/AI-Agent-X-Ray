@@ -61,8 +61,11 @@ def ingest_run():
                 run_id=run.id,
                 step_name=step_data.get('name', 'unknown'),
                 step_order=step_data.get('order', 0),
+                step_description=step_data.get('description'),
                 inputs=step_data.get('inputs', {}),
-                outputs=step_data.get('outputs', {})
+                outputs=step_data.get('outputs', {}),
+                reasons=step_data.get('reasons', {}),
+                metrics=step_data.get('metrics', {})
             )
             db.session.add(step)
         
@@ -100,4 +103,3 @@ def ingest_run():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
-

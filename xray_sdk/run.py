@@ -3,7 +3,6 @@ XRayRun - Represents a complete pipeline execution with multiple steps
 """
 
 import json
-import random
 from typing import List, Dict, Any, Optional
 from .step import XRayStep
 
@@ -20,16 +19,26 @@ class XRayRun:
     MIN_SAMPLE_SIZE = 10      # floor for aggressive trimming when still oversized
     STRING_TRUNCATE = 2000    # truncate very long strings to this many chars
     
-    def __init__(self, pipeline_name: str, metadata: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        pipeline_name: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        sample_size: Optional[int] = None,
+    ):
         """
         Initialize a new run.
         
         Args:
             pipeline_name: Name of the pipeline (e.g., "competitor_selection")
             metadata: Optional metadata about this run (e.g., {"product_id": "123"})
+            sample_size: Optional override for summarization sample size
         """
         self.pipeline_name = pipeline_name
         self.metadata = metadata or {}
+        if sample_size is None:
+            self.sample_size = self.SAMPLE_SIZE
+        else:
+            self.sample_size = max(1, sample_size)
         self.steps: List[XRayStep] = []
     
     def add_step(self, step: XRayStep) -> None:
@@ -58,7 +67,7 @@ class XRayRun:
 
     def _summarize_with_budget(self, data: Any) -> Any:
         """Iteratively summarize until payload fits under MAX_PAYLOAD_SIZE."""
-        sample_size = self.SAMPLE_SIZE
+        sample_size = self.sample_size
         summarized = data
         while True:
             summarized = self._summarize_once(summarized, sample_size)
@@ -93,7 +102,9 @@ class XRayRun:
         total_count = None
         if len(items) > sample_size:
             total_count = len(items)
-            items = random.sample(items, sample_size)
+            head_count = sample_size // 2
+            tail_count = sample_size - head_count
+            items = items[:head_count] + items[-tail_count:]
         return [self._summarize_once(item, sample_size) for item in items], total_count
     
     def to_dict(self) -> Dict[str, Any]:
