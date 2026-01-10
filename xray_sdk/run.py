@@ -14,7 +14,7 @@ class XRayRun:
     Automatically summarizes large inputs/outputs to prevent token limit issues.
     """
     
-    MAX_PAYLOAD_SIZE = 20000  # chars per step side (~5K tokens) - keeps total under 65K token limit
+    MAX_PAYLOAD_SIZE = 80000  # chars per step side (~20K tokens) - 2 steps = ~40K tokens, safely under 65K limit
     SAMPLE_SIZE = 100         # initial sample size per large list
     MIN_SAMPLE_SIZE = 10      # floor for aggressive trimming when still oversized
     STRING_TRUNCATE = 2000    # truncate very long strings to this many chars
@@ -66,7 +66,12 @@ class XRayRun:
             size = self.MAX_PAYLOAD_SIZE + 1  # force summarization if not serializable
         if size <= self.MAX_PAYLOAD_SIZE:
             return data
-        return self._summarize_with_budget(data)
+        # Log summarization
+        print(f"   [SDK] Summarizing large payload: {size} chars -> MAX {self.MAX_PAYLOAD_SIZE} chars")
+        summarized = self._summarize_with_budget(data)
+        new_size = len(json.dumps(summarized, default=str))
+        print(f"   [SDK] Summarization complete: {size} -> {new_size} chars")
+        return summarized
 
     def _summarize_with_budget(self, data: Any) -> Any:
         """Iteratively summarize until payload fits under MAX_PAYLOAD_SIZE."""

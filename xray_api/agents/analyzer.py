@@ -17,7 +17,7 @@ class XRayAnalyzer:
     """
     
     WINDOW_SIZE = 2  # Analyze 2 steps at a time
-    MAX_PAYLOAD_SIZE = 20000
+    MAX_PAYLOAD_SIZE = 80000  # chars per step side (~20K tokens) - 2 steps = ~40K tokens, safely under 65K limit
     SAMPLE_SIZE = 100
     MIN_SAMPLE_SIZE = 10
     STRING_TRUNCATE = 2000
@@ -107,7 +107,12 @@ class XRayAnalyzer:
             size = self.MAX_PAYLOAD_SIZE + 1
         if size <= self.MAX_PAYLOAD_SIZE:
             return data
-        return self._summarize_with_budget(data)
+        # Log that summarization is happening
+        self.logger.info(f"[analyzer] Summarizing large payload: {size} chars -> MAX {self.MAX_PAYLOAD_SIZE} chars")
+        summarized = self._summarize_with_budget(data)
+        new_size = len(json.dumps(summarized, default=str))
+        self.logger.info(f"[analyzer] Summarization complete: {size} -> {new_size} chars")
+        return summarized
 
     def _summarize_with_budget(self, data: Any) -> Any:
         sample_size = self.SAMPLE_SIZE
@@ -204,8 +209,17 @@ With the pipeline type and step types in mind, check if data flows correctly:
 - **Reasons**: If present, shows why items were dropped/rejected - useful for understanding filtering logic
 - **Metrics**: If present, shows step performance (e.g., elimination_rate) - useful for spotting anomalies
 
-Some inputs are configuration (filters, criteria, thresholds) and are not expected
-to be produced by the previous step. Do not flag those as missing data flow.
+## IMPORTANT: Config Inputs vs Data Flow Inputs
+Many step inputs are **configuration parameters** (filters, thresholds, limits, options) that come from settings, NOT from the previous step. Examples:
+- `min_rating`, `max_price`, `limit`, `threshold`, `filter_by`, `sort_order`
+- These are expected and normal - do NOT flag them as "missing data flow"
+
+Also, data often flows **implicitly** between steps (via shared state, databases, or function chaining) without being explicitly declared in inputs. If a step has only config inputs, assume the data flows implicitly and focus on whether the **outputs make sense** given the step's purpose.
+
+**Only flag as faulty if:**
+- Outputs contain wrong/corrupted data that doesn't match the step's purpose
+- There's a clear semantic mismatch (e.g., laptop items in a phone case filter)
+- The outputs contradict the config (e.g., items with rating 4.1 when min_rating was 4.5)
 
 Respond in valid JSON:
 {
