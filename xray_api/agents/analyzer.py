@@ -180,12 +180,30 @@ class XRayAnalyzer:
         """System prompt for window analysis (2 steps)"""
         return """You are analyzing a WINDOW of 2 consecutive steps from a pipeline.
 
-Check if the data flows correctly between these two steps:
-1. Does Step 2's input match Step 1's output?
-2. Are there semantic mismatches?
-3. Did anything get lost or corrupted in the transition?
+## Understanding the Pipeline & Steps
+First, use the **pipeline description** to understand what TYPE of pipeline this is:
+- Is it a data processing pipeline? (ETL, data transformation)
+- Is it an AI/ML pipeline? (inference, embeddings, classification)
+- Is it a document pipeline? (parsing, extraction, summarization)
+- Is it an automation pipeline? (scraping, API calls, integrations)
 
-Steps may include a short description of intent; use it to interpret the transition.
+Then, use each **step description** to understand what TYPE of step it is:
+- Data retrieval steps (fetching from DB, API, files)
+- Transformation steps (parsing, filtering, mapping)
+- AI/LLM steps (generation, embedding, classification)
+- Output steps (writing, sending, storing)
+
+## Check Data Flow
+With the pipeline type and step types in mind, check if data flows correctly:
+1. Does Step 2's input match Step 1's output?
+2. Are there semantic mismatches given what each step is supposed to do?
+3. Did anything get lost or corrupted in the transition?
+4. Does the output format match what the next step type expects?
+
+## Use Available Context
+- **Reasons**: If present, shows why items were dropped/rejected - useful for understanding filtering logic
+- **Metrics**: If present, shows step performance (e.g., elimination_rate) - useful for spotting anomalies
+
 Some inputs are configuration (filters, criteria, thresholds) and are not expected
 to be produced by the previous step. Do not flag those as missing data flow.
 
@@ -200,9 +218,12 @@ Respond in valid JSON:
     def _build_window_prompt(self, steps: List[Dict], window_index: int, run_data: Dict) -> str:
         """Build prompt for a 2-step window"""
         pipeline_name = run_data.get('pipeline_name', 'unknown')
+        pipeline_description = run_data.get('pipeline_description') or run_data.get('description') or 'No description provided'
         
         parts = [
             f"## Pipeline: {pipeline_name}",
+            f"**Pipeline Description (use this to understand the pipeline type):** {pipeline_description}",
+            "",
             f"## Window {window_index + 1}: Steps {steps[0].get('step_order')} → {steps[-1].get('step_order')}",
             ""
         ]
@@ -211,12 +232,25 @@ Respond in valid JSON:
             parts.append(f"### Step {step.get('step_order', '?')}: {step.get('step_name', 'unknown')}")
             step_description = step.get('step_description') or step.get('description')
             if step_description:
-                parts.append(f"**Description:** {step_description}")
+                parts.append(f"**Step Type/Purpose (use this to understand what this step does):** {step_description}")
+            else:
+                parts.append("**Step Type/Purpose:** Not provided - infer from step name and data")
             parts.append(f"**Inputs:** {json.dumps(step.get('inputs', {}), indent=2, default=str)}")
             parts.append(f"**Outputs:** {json.dumps(step.get('outputs', {}), indent=2, default=str)}")
+            
+            # Include reasons if present (explains why items were dropped/rejected)
+            reasons = step.get('reasons', {})
+            if reasons:
+                parts.append(f"**Reasons (items dropped/rejected):** {json.dumps(reasons, indent=2, default=str)}")
+            
+            # Include metrics if present (step-level performance data)
+            metrics = step.get('metrics', {})
+            if metrics:
+                parts.append(f"**Metrics:** {json.dumps(metrics, indent=2, default=str)}")
+            
             parts.append("")
         
-        parts.append("Analyze the transition between these steps. Is the data flow correct?")
+        parts.append("Analyze the transition between these steps. Consider the pipeline type and step purposes when evaluating data flow.")
         return "\n".join(parts)
     
     def _combine_window_results(

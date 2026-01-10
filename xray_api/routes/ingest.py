@@ -40,11 +40,15 @@ def ingest_run():
     
     try:
         # Get or create pipeline
+        pipeline_description = data.get('pipeline_description') or data.get('description')
         pipeline = Pipeline.query.filter_by(name=pipeline_name).first()
         if not pipeline:
-            pipeline = Pipeline(name=pipeline_name)
+            pipeline = Pipeline(name=pipeline_name, description=pipeline_description)
             db.session.add(pipeline)
             db.session.flush()
+        elif pipeline_description:
+            # Update description if provided
+            pipeline.description = pipeline_description
         
         # Create run
         run = Run(

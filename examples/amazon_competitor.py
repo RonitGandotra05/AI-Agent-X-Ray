@@ -19,6 +19,7 @@ def main():
     # Create a new run
     run = XRayRun(
         pipeline_name="competitor_selection",
+        description="E-commerce competitor selection pipeline that finds similar products on Amazon by generating keywords, searching, filtering, and ranking candidates.",
         metadata={
             "product_id": "ASIN123456",
             "product_title": "Premium Phone Case for iPhone 15",
@@ -31,6 +32,7 @@ def main():
     run.add_step(XRayStep(
         name="keyword_generation",
         order=1,
+        description="LLM step - generates search keywords from the product title and category to find similar competitor products.",
         inputs={
             "product_title": "Premium Phone Case for iPhone 15",
             "category": "Cell Phone Accessories"
@@ -72,6 +74,7 @@ def main():
     run.add_step(XRayStep(
         name="search",
         order=2,
+        description="API call step - searches Amazon catalog using the generated keywords to retrieve candidate products.",
         inputs={
             "keywords": ["phone case", "iphone 15 case", "laptop cover", "protective case"]
         },
@@ -84,6 +87,7 @@ def main():
     run.add_step(XRayStep(
         name="filter",
         order=3,
+        description="Data transformation step - filters candidates by price range, rating, and category to narrow down relevant products.",
         inputs={
             "candidates_count": 250,
             "filters": {
@@ -106,6 +110,7 @@ def main():
     run.add_step(XRayStep(
         name="rank_and_select",
         order=4,
+        description="Scoring step - ranks filtered candidates by relevance, price similarity, and rating to select the best competitor match.",
         inputs={
             "filtered_candidates": 45,
             "ranking_criteria": ["relevance", "price_similarity", "rating"]

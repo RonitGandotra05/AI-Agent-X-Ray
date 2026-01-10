@@ -22,6 +22,7 @@ class XRayRun:
     def __init__(
         self,
         pipeline_name: str,
+        description: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         sample_size: Optional[int] = None,
     ):
@@ -30,10 +31,12 @@ class XRayRun:
         
         Args:
             pipeline_name: Name of the pipeline (e.g., "competitor_selection")
+            description: Optional description of what this pipeline does (helps AI analysis)
             metadata: Optional metadata about this run (e.g., {"product_id": "123"})
             sample_size: Optional override for summarization sample size
         """
         self.pipeline_name = pipeline_name
+        self.description = description or ""
         self.metadata = metadata or {}
         if sample_size is None:
             self.sample_size = self.SAMPLE_SIZE
@@ -111,6 +114,7 @@ class XRayRun:
         """Convert run to dictionary for JSON serialization"""
         return {
             "pipeline_name": self.pipeline_name,
+            "pipeline_description": self.description,
             "metadata": self.metadata,
             "steps": [step.to_dict() for step in self.steps]
         }
