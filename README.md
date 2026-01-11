@@ -188,12 +188,9 @@ The system is designed around these key principles:
 
 ## Future Improvements
 
-- **Docker image**: Pre-built container for one-command local setup - developers just run `docker compose up` instead of installing packages, databases, etc.
 - **Local LLM support**: Run lightweight local models (e.g., Ollama, llama.cpp) to eliminate third-party API dependency and reduce costs
 - **Multi-LLM support**: Add OpenAI, Anthropic, and other cloud providers via configurable adapters
-- **Pipeline-level summary**: Generate a one-pass summary of the entire pipeline before window analysis
 - **Streaming results**: Return partial analysis as each window completes
 - **Web dashboard**: Visual timeline of pipeline runs with highlighted faulty steps
 - **Comparison mode**: Compare two runs of the same pipeline to spot regressions
-- **Cloud API tokens**: Self-serve multiple API tokens per account so teams can use the hosted service without sharing a single key
 - **Dashboard-issued keys & rate limits**: Dashboard option to create per-user API tokens linked to their Gmail login, with configurable rate limiting per token
