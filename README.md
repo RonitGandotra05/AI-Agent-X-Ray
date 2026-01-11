@@ -2,75 +2,54 @@
 
 A lightweight debugging system for multi-step AI pipelines that captures execution data and uses AI to identify faulty steps.
 
-## Quick Start
+## Deployment Options
 
-### 1. Install Dependencies
-
+### Local (run API yourself)
+1) Install deps  
 ```bash
 pip3 install flask flask-sqlalchemy flask-cors psycopg2-binary openai python-dotenv requests
 ```
-
-### 2. Configure Environment
-
-Create a `.env` file:
+2) Create `.env` (local API)  
 ```env
 DATABASE_URL=postgresql://user:pass@host/dbname
+XRAY_API_URL=http://localhost:5000
+XRAY_API_KEY=your-xray-api-key
 CEREBRAS_API_KEY=your-api-key
 CEREBRAS_BASE_URL=https://api.cerebras.ai/v1
 CEREBRAS_MODEL=llama3.1-8b
 ```
-
-### 3. Initialize Database
-
-```bash
-python3 -c "
-from dotenv import load_dotenv
-load_dotenv()
-from xray_api.app import create_app
-from xray_api.models import db
-
-app = create_app()
-with app.app_context():
-    db.create_all()
-    print('Database tables created!')
-"
-```
-
-### 4. Start the API Server
-
+3) Start API (creates tables on startup)  
 ```bash
 python3 -m xray_api.app
 ```
-
-### 5. Run Example
-
+4) Run an example (hits your local API)  
 ```bash
 python3 examples/amazon_competitor.py
 ```
 
-## Install SDK from PyPI
-
+### Cloud (hosted API + PyPI SDK)
+- PyPI: https://pypi.org/project/xray-sdk/
 ```bash
 python3 -m pip install xray-sdk
-```
-
-Configure environment:
-```bash
 export XRAY_API_URL=https://ai-agent-x-ray.onrender.com
 export XRAY_API_KEY=your-xray-api-key
 ```
-
-Basic usage:
+- Basic usage (routes to Render URL):
 ```python
 import os
 from xray_sdk import XRayClient, XRayRun, XRayStep
 
 client = XRayClient(
-    os.getenv("XRAY_API_URL", "https://ai-agent-x-ray.onrender.com"),
+    api_url=os.getenv("XRAY_API_URL", "https://ai-agent-x-ray.onrender.com"),
     api_key=os.getenv("XRAY_API_KEY"),
 )
 
-run = XRayRun("my_pipeline", metadata={"context": "test"}, sample_size=50)
+run = XRayRun(
+    pipeline_name="my_pipeline",
+    description="Demo pipeline for keyword generation and search.",
+    metadata={"context": "test"},
+    sample_size=50,
+)
 run.add_step(XRayStep(
     name="keyword_generation",
     order=1,
@@ -119,7 +98,10 @@ run.add_step(XRayStep(
 ))
 
 # Send for analysis
-client = XRayClient("http://localhost:5000")
+client = XRayClient(
+    api_url=os.getenv("XRAY_API_URL", "https://ai-agent-x-ray.onrender.com"),
+    api_key=os.getenv("XRAY_API_KEY")
+)
 result = client.send(run)
 
 print(result["analysis"])
