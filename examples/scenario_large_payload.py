@@ -1,3 +1,7 @@
+from dotenv import load_dotenv
+
+load_dotenv()
+
 \"\"\"Scenario: large outputs to exercise summarization + config inputs.\"\"\"
 
 import os
@@ -45,7 +49,7 @@ def main() -> None:
         metrics={"elimination_rate": 0.4}
     ))
 
-    client = XRayClient("http://localhost:5000", api_key=os.getenv("XRAY_API_KEY"))
+    client = XRayClient("https://ai-agent-x-ray.onrender.com", api_key=os.getenv("XRAY_API_KEY"))
     result = client.send(run)
     print(result)
 

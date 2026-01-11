@@ -1,8 +1,12 @@
 """Scenario: force spooling (bad port) then flush to real API."""
 
+from dotenv import load_dotenv
+
 import os
 from xray_sdk import XRayClient, XRayRun, XRayStep
 
+
+load_dotenv()
 
 def main() -> None:
     run = XRayRun("scenario_spool_then_flush", metadata={"case": "spool"}, sample_size=20)
@@ -20,7 +24,7 @@ def main() -> None:
     print({"spool_attempt": bad_result})
 
     # Then flush using the real API once it is up.
-    good_client = XRayClient("http://localhost:5000", api_key=os.getenv("XRAY_API_KEY"))
+    good_client = XRayClient("https://ai-agent-x-ray.onrender.com", api_key=os.getenv("XRAY_API_KEY"))
     flush_result = good_client.flush_spool()
     print({"flush_result": flush_result})
 

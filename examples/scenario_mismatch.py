@@ -1,8 +1,12 @@
 """Scenario: intentional mismatch (wrong keywords → wrong candidates)."""
 
+from dotenv import load_dotenv
+
 import os
 from xray_sdk import XRayClient, XRayRun, XRayStep
 
+
+load_dotenv()
 
 def main() -> None:
     run = XRayRun("scenario_mismatch", metadata={"case": "mismatch"}, sample_size=20)
@@ -28,7 +32,7 @@ def main() -> None:
         description="Rank candidates by relevance to the target category."
     ))
 
-    client = XRayClient("http://localhost:5000", api_key=os.getenv("XRAY_API_KEY"))
+    client = XRayClient("https://ai-agent-x-ray.onrender.com", api_key=os.getenv("XRAY_API_KEY"))
     result = client.send(run)
     print(result)
 

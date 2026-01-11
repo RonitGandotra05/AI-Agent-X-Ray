@@ -48,6 +48,41 @@ python3 -m xray_api.app
 python3 examples/amazon_competitor.py
 ```
 
+## Install SDK from PyPI
+
+```bash
+python3 -m pip install xray-sdk
+```
+
+Configure environment:
+```bash
+export XRAY_API_URL=https://ai-agent-x-ray.onrender.com
+export XRAY_API_KEY=your-xray-api-key
+```
+
+Basic usage:
+```python
+import os
+from xray_sdk import XRayClient, XRayRun, XRayStep
+
+client = XRayClient(
+    os.getenv("XRAY_API_URL", "https://ai-agent-x-ray.onrender.com"),
+    api_key=os.getenv("XRAY_API_KEY"),
+)
+
+run = XRayRun("my_pipeline", metadata={"context": "test"}, sample_size=50)
+run.add_step(XRayStep(
+    name="keyword_generation",
+    order=1,
+    inputs={"title": "Phone Case"},
+    outputs={"keywords": ["phone case", "iphone"]},
+    description="Generate search keywords from the title."
+))
+
+result = client.send(run)
+print(result.get("analysis"))
+```
+
 ## SDK Usage
 
 ```python

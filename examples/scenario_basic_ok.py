@@ -1,8 +1,12 @@
 """Scenario: happy-path flow with config inputs, reasons, metrics."""
 
+from dotenv import load_dotenv
+
 import os
 from xray_sdk import XRayClient, XRayRun, XRayStep
 
+
+load_dotenv()
 
 def main() -> None:
     run = XRayRun("scenario_basic_ok", metadata={"case": "ok"}, sample_size=20)
@@ -31,7 +35,7 @@ def main() -> None:
         metrics={"elimination_rate": 0.33}
     ))
 
-    client = XRayClient("http://localhost:5000", api_key=os.getenv("XRAY_API_KEY"))
+    client = XRayClient("https://ai-agent-x-ray.onrender.com", api_key=os.getenv("XRAY_API_KEY"))
     result = client.send(run)
     print(result)
 

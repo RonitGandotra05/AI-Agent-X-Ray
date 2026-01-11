@@ -5,8 +5,14 @@ This demonstrates how to use the X-Ray SDK to debug a multi-step
 competitor selection pipeline.
 """
 
+from dotenv import load_dotenv
+
+
 import sys
 import os
+
+load_dotenv()
+
 sys.path.insert(0, '.')
 
 """Demo: competitor selection pipeline with multiple steps."""
@@ -142,7 +148,7 @@ def main():
     print("Sending to X-Ray API for analysis...")
     print("=" * 60)
     
-    client = XRayClient(api_url="http://localhost:5000", api_key=os.getenv("XRAY_API_KEY"))
+    client = XRayClient(api_url="https://ai-agent-x-ray.onrender.com", api_key=os.getenv("XRAY_API_KEY"))
     result = client.send(run)
     
     print("\nAPI Response:")
