@@ -196,3 +196,4 @@ The system is designed around these key principles:
 - **Web dashboard**: Visual timeline of pipeline runs with highlighted faulty steps
 - **Comparison mode**: Compare two runs of the same pipeline to spot regressions
 - **Cloud API tokens**: Self-serve multiple API tokens per account so teams can use the hosted service without sharing a single key
+- **Dashboard-issued keys & rate limits**: Dashboard option to create per-user API tokens linked to their Gmail login, with configurable rate limiting per token
