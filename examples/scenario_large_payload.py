@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-\"\"\"Scenario: large outputs to exercise summarization + config inputs.\"\"\"
+"""Scenario: large outputs to exercise summarization + config inputs."""
 
 import os
 from xray_sdk import XRayClient, XRayRun, XRayStep
