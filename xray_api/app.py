@@ -26,10 +26,31 @@ def create_app():
     )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['JSON_SORT_KEYS'] = False
+    app.config['XRAY_API_KEY'] = os.getenv('XRAY_API_KEY')
     
     # Initialize extensions
     CORS(app)
     db.init_app(app)
+    
+    # API Key authentication middleware
+    @app.before_request
+    def check_api_key():
+        from flask import request, jsonify
+        
+        # Skip auth for health endpoint
+        if request.path == '/health':
+            return None
+        
+        # Skip if no API key is configured (local dev mode)
+        if not app.config['XRAY_API_KEY']:
+            return None
+        
+        # Check API key header
+        provided_key = request.headers.get('X-API-Key')
+        if not provided_key or provided_key != app.config['XRAY_API_KEY']:
+            return jsonify({"error": "Invalid or missing API key"}), 401
+        
+        return None
     
     # Register blueprints
     app.register_blueprint(ingest_bp)

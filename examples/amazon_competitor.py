@@ -6,6 +6,7 @@ competitor selection pipeline.
 """
 
 import sys
+import os
 sys.path.insert(0, '.')
 
 """Demo: competitor selection pipeline with multiple steps."""
@@ -141,7 +142,7 @@ def main():
     print("Sending to X-Ray API for analysis...")
     print("=" * 60)
     
-    client = XRayClient(api_url="http://localhost:5000")
+    client = XRayClient(api_url="http://localhost:5000", api_key=os.getenv("XRAY_API_KEY"))
     result = client.send(run)
     
     print("\nAPI Response:")

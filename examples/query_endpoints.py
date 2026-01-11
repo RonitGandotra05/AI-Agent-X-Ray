@@ -1,10 +1,11 @@
 """Scenario: call GET endpoints via SDK helpers."""
 
+import os
 from xray_sdk import XRayClient
 
 
 def main() -> None:
-    client = XRayClient("http://localhost:5000")
+    client = XRayClient("http://localhost:5000", api_key=os.getenv("XRAY_API_KEY"))
 
     pipelines = client.list_pipelines()
     print({"pipelines": pipelines})

@@ -1,5 +1,6 @@
 """Scenario: intentional mismatch (wrong keywords → wrong candidates)."""
 
+import os
 from xray_sdk import XRayClient, XRayRun, XRayStep
 
 
@@ -27,7 +28,7 @@ def main() -> None:
         description="Rank candidates by relevance to the target category."
     ))
 
-    client = XRayClient("http://localhost:5000")
+    client = XRayClient("http://localhost:5000", api_key=os.getenv("XRAY_API_KEY"))
     result = client.send(run)
     print(result)
 

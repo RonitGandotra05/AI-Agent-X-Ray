@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: xray-api
+    env: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn xray_api.wsgi:app
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: XRAY_API_KEY
+        sync: false
+      - key: CEREBRAS_API_KEY
+        sync: false
+      - key: CEREBRAS_BASE_URL
+        value: https://api.cerebras.ai/v1
+      - key: CEREBRAS_MODEL
+        value: llama3.1-8b

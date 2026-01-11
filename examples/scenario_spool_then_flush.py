@@ -1,5 +1,6 @@
 """Scenario: force spooling (bad port) then flush to real API."""
 
+import os
 from xray_sdk import XRayClient, XRayRun, XRayStep
 
 
@@ -14,12 +15,12 @@ def main() -> None:
     ))
 
     # Intentionally point to a bad port to force spooling.
-    bad_client = XRayClient("http://localhost:5999", timeout=2)
+    bad_client = XRayClient("http://localhost:5999", api_key=os.getenv("XRAY_API_KEY"), timeout=2)
     bad_result = bad_client.send(run)
     print({"spool_attempt": bad_result})
 
     # Then flush using the real API once it is up.
-    good_client = XRayClient("http://localhost:5000")
+    good_client = XRayClient("http://localhost:5000", api_key=os.getenv("XRAY_API_KEY"))
     flush_result = good_client.flush_spool()
     print({"flush_result": flush_result})
 

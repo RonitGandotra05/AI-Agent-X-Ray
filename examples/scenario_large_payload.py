@@ -1,5 +1,6 @@
-"""Scenario: large outputs to exercise summarization + config inputs."""
+\"\"\"Scenario: large outputs to exercise summarization + config inputs.\"\"\"
 
+import os
 from xray_sdk import XRayClient, XRayRun, XRayStep
 
 
@@ -44,7 +45,7 @@ def main() -> None:
         metrics={"elimination_rate": 0.4}
     ))
 
-    client = XRayClient("http://localhost:5000")
+    client = XRayClient("http://localhost:5000", api_key=os.getenv("XRAY_API_KEY"))
     result = client.send(run)
     print(result)
 

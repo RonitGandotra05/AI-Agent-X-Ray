@@ -17,20 +17,30 @@ class XRayClient:
     Features:
     - Sends run data to API for AI-powered analysis
     - Spools to local file if API is unavailable
+    - Supports API key authentication
     """
     
     DEFAULT_SPOOL_DIR = ".xray_spool"
     
-    def __init__(self, api_url: str, timeout: int = 180):
+    def __init__(self, api_url: str, api_key: Optional[str] = None, timeout: int = 180):
         """
         Initialize the X-Ray client.
         
         Args:
             api_url: Base URL of the X-Ray API (e.g., "http://localhost:5000")
-            timeout: Request timeout in seconds (default: 60 for LLM analysis)
+            api_key: Optional API key for authentication (required if server has XRAY_API_KEY set)
+            timeout: Request timeout in seconds (default: 180 for LLM analysis)
         """
         self.api_url = api_url.rstrip("/")
+        self.api_key = api_key
         self.timeout = timeout
+    
+    def _headers(self) -> Dict[str, str]:
+        """Build headers for API requests."""
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+        return headers
     
     def send(self, run: XRayRun, analyze: bool = True) -> Dict[str, Any]:
         """
@@ -53,6 +63,7 @@ class XRayClient:
             response = requests.post(
                 f"{self.api_url}/api/ingest",
                 json=payload,
+                headers=self._headers(),
                 timeout=self.timeout
             )
             response.raise_for_status()
@@ -93,7 +104,7 @@ class XRayClient:
 
     def list_pipelines(self) -> Dict[str, Any]:
         """List all pipelines."""
-        response = requests.get(f"{self.api_url}/api/pipelines", timeout=self.timeout)
+        response = requests.get(f"{self.api_url}/api/pipelines", headers=self._headers(), timeout=self.timeout)
         response.raise_for_status()
         return response.json()
 
@@ -109,19 +120,19 @@ class XRayClient:
             params["pipeline"] = pipeline
         if status:
             params["status"] = status
-        response = requests.get(f"{self.api_url}/api/runs", params=params, timeout=self.timeout)
+        response = requests.get(f"{self.api_url}/api/runs", params=params, headers=self._headers(), timeout=self.timeout)
         response.raise_for_status()
         return response.json()
 
     def get_run(self, run_id: str) -> Dict[str, Any]:
         """Get a single run with all its steps."""
-        response = requests.get(f"{self.api_url}/api/runs/{run_id}", timeout=self.timeout)
+        response = requests.get(f"{self.api_url}/api/runs/{run_id}", headers=self._headers(), timeout=self.timeout)
         response.raise_for_status()
         return response.json()
 
     def get_analysis(self, run_id: str) -> Dict[str, Any]:
         """Get analysis result for a run."""
-        response = requests.get(f"{self.api_url}/api/runs/{run_id}/analysis", timeout=self.timeout)
+        response = requests.get(f"{self.api_url}/api/runs/{run_id}/analysis", headers=self._headers(), timeout=self.timeout)
         response.raise_for_status()
         return response.json()
 
@@ -137,7 +148,7 @@ class XRayClient:
             params["step_name"] = step_name
         if pipeline:
             params["pipeline"] = pipeline
-        response = requests.get(f"{self.api_url}/api/search/steps", params=params, timeout=self.timeout)
+        response = requests.get(f"{self.api_url}/api/search/steps", params=params, headers=self._headers(), timeout=self.timeout)
         response.raise_for_status()
         return response.json()
     
@@ -169,6 +180,7 @@ class XRayClient:
             response = requests.post(
                 f"{self.api_url}/api/ingest",
                 json=data,
+                headers=self._headers(),
                 timeout=self.timeout
             )
             response.raise_for_status()

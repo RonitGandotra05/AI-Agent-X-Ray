@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=69.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xray-sdk"
+version = "0.1.0"
+description = "Lightweight debugging SDK for multi-step AI pipelines."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Proprietary" }
+authors = [{ name = "Equal Collective" }]
+dependencies = [
+  "requests>=2.31.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["xray_sdk"]
