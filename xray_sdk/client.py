@@ -151,6 +151,53 @@ class XRayClient:
         response = requests.get(f"{self.api_url}/api/search/steps", params=params, headers=self._headers(), timeout=self.timeout)
         response.raise_for_status()
         return response.json()
+
+    def stream_analysis(self, run_id: str):
+        """
+        Stream analysis results via Server-Sent Events.
+        
+        Yields window results as they complete instead of waiting for full analysis.
+        
+        Args:
+            run_id: The run ID to analyze
+            
+        Yields:
+            Dict with event type and data for each window/completion
+        """
+        import json
+        
+        response = requests.get(
+            f"{self.api_url}/api/analyze/{run_id}/stream",
+            headers=self._headers(),
+            stream=True,
+            timeout=self.timeout
+        )
+        response.raise_for_status()
+        
+        event_type = None
+        data_buffer = []
+        
+        for line in response.iter_lines(decode_unicode=True):
+            if line is None:
+                continue
+            line = line.strip()
+            
+            if line.startswith('event:'):
+                event_type = line[6:].strip()
+            elif line.startswith('data:'):
+                data_buffer.append(line[5:].strip())
+            elif line == '' and event_type and data_buffer:
+                # Empty line signals end of event
+                data_str = ''.join(data_buffer)
+                try:
+                    data = json.loads(data_str)
+                except json.JSONDecodeError:
+                    data = {"raw": data_str}
+                
+                yield {"event": event_type, "data": data}
+                
+                event_type = None
+                data_buffer = []
     
     def flush_spool(self, spool_dir: Optional[str] = None) -> Dict[str, Any]:
         """

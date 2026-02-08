@@ -86,6 +86,66 @@ class XRayAnalyzer:
 
         return self._combine_window_results(window_results, sorted_steps)
 
+    def analyze_run_streaming(self, run_data: Dict[str, Any]):
+        """
+        Streaming version of analyze_run - yields results as each window completes.
+        
+        Yields:
+            Dict with window analysis result for each transition
+        """
+        steps = run_data.get('steps', [])
+        if not steps:
+            yield {"event": "error", "data": {"error": "No steps to analyze"}}
+            return
+
+        run_data = self._summarize_run_data(run_data)
+        sorted_steps = sorted(run_data.get('steps', []), key=lambda s: s.get('step_order', 0))
+        
+        total_windows = max(1, len(sorted_steps) - 1) if len(sorted_steps) > self.WINDOW_SIZE else 1
+        window_results = []
+        faulty_found = False
+
+        if len(sorted_steps) <= self.WINDOW_SIZE:
+            result = self._analyze_window(sorted_steps, 0, run_data)
+            window_results.append(result)
+            yield {
+                "event": "window",
+                "data": {
+                    "window": 1,
+                    "total_windows": 1,
+                    "steps_analyzed": [s.get('step_name') for s in sorted_steps],
+                    "result": result
+                }
+            }
+            if result.get('faulty_step'):
+                faulty_found = True
+        else:
+            for i in range(len(sorted_steps) - 1):
+                window = sorted_steps[i:i + self.WINDOW_SIZE]
+                result = self._analyze_window(window, i, run_data)
+                window_results.append(result)
+                
+                yield {
+                    "event": "window",
+                    "data": {
+                        "window": i + 1,
+                        "total_windows": total_windows,
+                        "steps_analyzed": [s.get('step_name') for s in window],
+                        "result": result
+                    }
+                }
+                
+                if result.get('faulty_step'):
+                    faulty_found = True
+                    break
+
+        # Yield final combined result
+        final_result = self._combine_window_results(window_results, sorted_steps)
+        yield {
+            "event": "complete",
+            "data": final_result
+        }
+
     def _summarize_run_data(self, run_data: Dict[str, Any]) -> Dict[str, Any]:
         """Apply server-side summarization to keep prompts bounded."""
         summarized = dict(run_data)

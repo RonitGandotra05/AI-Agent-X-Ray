@@ -119,6 +119,7 @@ print(result["analysis"])
 | `send(run, analyze=True)` | Send run to API; spools locally if unavailable |
 | `spool(run)` | Manually save run to `.xray_spool/` |
 | `flush_spool()` | Send newest spooled run and delete all spool files |
+| `stream_analysis(run_id)` | Stream analysis via SSE, yields window results as they complete |
 | `list_pipelines()` | List all pipelines |
 | `list_runs(pipeline, status, limit)` | List runs with filters |
 | `get_run(run_id)` | Get run with all steps |
@@ -135,6 +136,7 @@ GET
 - `/api/runs`: List runs (filter by pipeline/status)
 - `/api/runs/<id>`: Get a run with all steps
 - `/api/runs/<id>/analysis`: Get analysis only for a run
+- `/api/analyze/<id>/stream`: Stream analysis via SSE (real-time window results)
 - `/api/pipelines`: List pipelines
 - `/api/search/steps`: Search steps by name/pipeline
 - `/health`: Health check
