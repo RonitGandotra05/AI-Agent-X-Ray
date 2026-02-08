@@ -1,0 +1,54 @@
+"""
+Ollama LLM Adapter - Local LLM support
+"""
+
+import os
+import requests
+from typing import List, Dict
+from .base import LLMAdapter
+
+
+class OllamaAdapter(LLMAdapter):
+    """
+    Adapter for Ollama (local LLM).
+    
+    No API key required - runs locally.
+    
+    Environment variables:
+        OLLAMA_BASE_URL: Ollama server URL (default: http://localhost:11434)
+        OLLAMA_MODEL: Model name (default: llama3)
+    """
+    
+    def __init__(self):
+        self.base_url = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
+        self._model = os.getenv('OLLAMA_MODEL', 'llama3')
+    
+    def chat_completion(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.1,
+        max_tokens: int = 1000
+    ) -> str:
+        response = requests.post(
+            f"{self.base_url}/api/chat",
+            json={
+                "model": self._model,
+                "messages": messages,
+                "stream": False,
+                "options": {
+                    "temperature": temperature,
+                    "num_predict": max_tokens
+                }
+            },
+            timeout=300  # Local models can be slow
+        )
+        response.raise_for_status()
+        return response.json()['message']['content']
+    
+    @property
+    def provider_name(self) -> str:
+        return "ollama"
+    
+    @property
+    def model_name(self) -> str:
+        return self._model

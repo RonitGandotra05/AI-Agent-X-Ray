@@ -1,19 +1,26 @@
 """
-XRayAnalyzer - AI agent for analyzing pipeline runs using Cerebras API
+XRayAnalyzer - AI agent for analyzing pipeline runs
 Uses sliding-window analysis to stay under token limits.
+Supports multiple LLM providers via adapters.
 """
 
 import os
 import json
 import logging
 from typing import Dict, Any, List
-from openai import OpenAI
+from .llm_adapters import get_adapter, LLMAdapter
 
 
 class XRayAnalyzer:
     """
-    Analyzes pipeline runs to identify faulty steps using Cerebras LLM.
-    Uses a sliding-window approach (2 steps at a time) to fit within 65K token context limit.
+    Analyzes pipeline runs to identify faulty steps using LLM.
+    Uses a sliding-window approach (2 steps at a time) to fit within token context limits.
+    
+    Supports multiple LLM providers via LLM_PROVIDER env var:
+    - cerebras (default)
+    - openai
+    - anthropic  
+    - ollama (local)
     """
     
     WINDOW_SIZE = 2  # Analyze 2 steps at a time
@@ -22,21 +29,19 @@ class XRayAnalyzer:
     MIN_SAMPLE_SIZE = 10
     STRING_TRUNCATE = 2000
     
-    def __init__(self):
-        """Initialize the analyzer with Cerebras API configuration"""
-        self.api_key = os.getenv('CEREBRAS_API_KEY')
-        self.base_url = os.getenv('CEREBRAS_BASE_URL', 'https://api.cerebras.ai/v1')
-        self.model = os.getenv('CEREBRAS_MODEL', 'llama-3.3-70b')
+    def __init__(self, provider: str = None):
+        """
+        Initialize the analyzer with LLM adapter.
+        
+        Args:
+            provider: LLM provider name (cerebras, openai, anthropic, ollama).
+                      Defaults to LLM_PROVIDER env var, then 'cerebras'.
+        """
         self.log_thinking = os.getenv('XRAY_LOG_THINKING', 'true').lower() in ('1', 'true', 'yes')
         
-        if not self.api_key:
-            raise ValueError("CEREBRAS_API_KEY environment variable not set")
+        # Get the appropriate LLM adapter
+        self.adapter: LLMAdapter = get_adapter(provider)
         
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url
-        )
-
         self.logger = logging.getLogger(__name__)
         if not self.logger.handlers:
             logging.basicConfig(level=logging.DEBUG if self.log_thinking else logging.INFO)
@@ -47,8 +52,9 @@ class XRayAnalyzer:
                 handler.setLevel(logging.DEBUG)
             self.logger.setLevel(logging.DEBUG)
             # Keep analyzer output concise by muting noisy HTTP client debug logs.
-            for noisy_logger in ("openai", "httpx", "httpcore", "werkzeug"):
+            for noisy_logger in ("openai", "httpx", "httpcore", "werkzeug", "anthropic"):
                 logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+            self.logger.info(f"[analyzer] Using LLM provider: {self.adapter.provider_name} ({self.adapter.model_name})")
     
     def analyze_run(self, run_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -220,17 +226,17 @@ class XRayAnalyzer:
             self.logger.info("[analyzer] window_prompt window=%s size=%s", window_index + 1, len(prompt))
         
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": self._get_system_prompt()},
-                    {"role": "user", "content": prompt}
-                ],
+            messages = [
+                {"role": "system", "content": self._get_system_prompt()},
+                {"role": "user", "content": prompt}
+            ]
+            
+            result_text = self.adapter.chat_completion(
+                messages=messages,
                 temperature=0.1,
                 max_tokens=1000
             )
             
-            result_text = response.choices[0].message.content
             if self.log_thinking:
                 self.logger.info("[analyzer] window_raw_response chars=%s", len(result_text or ""))
             parsed = self._parse_analysis_response(result_text)

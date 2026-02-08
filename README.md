@@ -14,9 +14,25 @@ pip3 install flask flask-sqlalchemy flask-cors psycopg2-binary openai python-dot
 DATABASE_URL=postgresql://user:pass@host/dbname
 XRAY_API_URL=http://localhost:5000
 XRAY_API_KEY=your-xray-api-key
+
+# LLM Provider (choose one: cerebras, openai, anthropic, ollama)
+LLM_PROVIDER=cerebras
+
+# Cerebras (default)
 CEREBRAS_API_KEY=your-api-key
-CEREBRAS_BASE_URL=https://api.cerebras.ai/v1
-CEREBRAS_MODEL=llama3.1-8b
+CEREBRAS_MODEL=llama-3.3-70b
+
+# OpenAI (alternative)
+# OPENAI_API_KEY=your-openai-key
+# OPENAI_MODEL=gpt-4o-mini
+
+# Anthropic (alternative)
+# ANTHROPIC_API_KEY=your-anthropic-key
+# ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+
+# Ollama - local, no API key needed
+# OLLAMA_BASE_URL=http://localhost:11434
+# OLLAMA_MODEL=llama3
 ```
 3) Start API (creates tables on startup)  
 ```bash
@@ -184,15 +200,10 @@ The system is designed around these key principles:
 
 - **No cross-window context**: When analyzing step 3→4, the LLM doesn't see steps 1→2. Issues that span multiple transitions may be missed, if they are not detected somehow at previous step.
 
-- **Single LLM provider**: Currently only supports Cerebras API. Other providers require code changes.
-
 - **Summarization loses detail**: Very large payloads are aggressively trimmed. Some bugs may be hidden in truncated data.
 
 ## Future Improvements
 
-- **Local LLM support**: Run lightweight local models (e.g., Ollama, llama.cpp) to eliminate third-party API dependency and reduce costs
-- **Multi-LLM support**: Add OpenAI, Anthropic, and other cloud providers via configurable adapters
-- **Streaming results**: Return partial analysis as each window completes
 - **Web dashboard**: Visual timeline of pipeline runs with highlighted faulty steps
 - **Comparison mode**: Compare two runs of the same pipeline to spot regressions
 - **Dashboard-issued keys & rate limits**: Dashboard option to create per-user API tokens linked to their Gmail login, with configurable rate limiting per token
