@@ -7,6 +7,8 @@ from .cerebras import CerebrasAdapter
 from .openai_adapter import OpenAIAdapter
 from .anthropic_adapter import AnthropicAdapter
 from .ollama import OllamaAdapter
+from .openrouter import OpenRouterAdapter
+from .groq import GroqAdapter
 
 
 def get_adapter(provider: str = None) -> LLMAdapter:
@@ -14,7 +16,7 @@ def get_adapter(provider: str = None) -> LLMAdapter:
     Factory function to get the appropriate LLM adapter.
     
     Args:
-        provider: Provider name (cerebras, openai, anthropic, ollama)
+        provider: Provider name (cerebras, openai, anthropic, ollama, openrouter, groq)
                   Defaults to LLM_PROVIDER env var, then 'cerebras'
     
     Returns:
@@ -30,6 +32,8 @@ def get_adapter(provider: str = None) -> LLMAdapter:
         'openai': OpenAIAdapter,
         'anthropic': AnthropicAdapter,
         'ollama': OllamaAdapter,
+        'openrouter': OpenRouterAdapter,
+        'groq': GroqAdapter,
     }
     
     adapter_class = adapters.get(provider)
@@ -45,5 +49,7 @@ __all__ = [
     'OpenAIAdapter',
     'AnthropicAdapter',
     'OllamaAdapter',
+    'OpenRouterAdapter',
+    'GroqAdapter',
     'get_adapter',
 ]

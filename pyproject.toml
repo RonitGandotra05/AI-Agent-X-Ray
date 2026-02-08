@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xray-sdk"
-version = "0.1.4"
+version = "0.1.5"
 description = "Lightweight debugging SDK for multi-step AI pipelines."
 readme = { file = "README_SDK.md", content-type = "text/markdown" }
 requires-python = ">=3.9"

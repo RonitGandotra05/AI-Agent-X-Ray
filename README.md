@@ -15,20 +15,28 @@ DATABASE_URL=postgresql://user:pass@host/dbname
 XRAY_API_URL=http://localhost:5000
 XRAY_API_KEY=your-xray-api-key
 
-# LLM Provider (choose one: cerebras, openai, anthropic, ollama)
+# LLM Provider (choose one: cerebras, openai, anthropic, ollama, openrouter, groq)
 LLM_PROVIDER=cerebras
 
 # Cerebras (default)
 CEREBRAS_API_KEY=your-api-key
 CEREBRAS_MODEL=llama-3.3-70b
 
-# OpenAI (alternative)
+# OpenAI
 # OPENAI_API_KEY=your-openai-key
 # OPENAI_MODEL=gpt-4o-mini
 
-# Anthropic (alternative)
+# Anthropic
 # ANTHROPIC_API_KEY=your-anthropic-key
 # ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+
+# OpenRouter (access to many models)
+# OPENROUTER_API_KEY=your-openrouter-key
+# OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
+
+# Groq (ultra-fast inference)
+# GROQ_API_KEY=your-groq-key
+# GROQ_MODEL=llama-3.3-70b-versatile
 
 # Ollama - local, no API key needed
 # OLLAMA_BASE_URL=http://localhost:11434
