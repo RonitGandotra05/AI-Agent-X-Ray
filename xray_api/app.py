@@ -3,7 +3,7 @@ X-Ray API - Flask Application Entry Point
 """
 
 import os
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -28,6 +28,7 @@ def create_app():
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['JSON_SORT_KEYS'] = False
     app.config['XRAY_API_KEY'] = os.getenv('XRAY_API_KEY')
+    app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB max request size
     
     # Initialize extensions
     CORS(app)
@@ -57,6 +58,23 @@ def create_app():
     app.register_blueprint(ingest_bp)
     app.register_blueprint(query_bp)
     app.register_blueprint(stream_bp)
+    
+    # Global error handlers for consistent JSON error responses
+    @app.errorhandler(400)
+    def bad_request(e):
+        return jsonify({"error": "Bad request", "detail": str(e)}), 400
+    
+    @app.errorhandler(404)
+    def not_found(e):
+        return jsonify({"error": "Not found"}), 404
+    
+    @app.errorhandler(413)
+    def payload_too_large(e):
+        return jsonify({"error": "Payload too large", "max_bytes": app.config['MAX_CONTENT_LENGTH']}), 413
+    
+    @app.errorhandler(500)
+    def internal_error(e):
+        return jsonify({"error": "Internal server error"}), 500
     
     # Health check endpoint
     @app.route('/health')

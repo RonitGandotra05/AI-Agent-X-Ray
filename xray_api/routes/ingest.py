@@ -38,6 +38,16 @@ def ingest_run():
     if not steps_data:
         return jsonify({"error": "At least one step is required"}), 400
     
+    # Validate step count and basic field types
+    if len(steps_data) > 50:
+        return jsonify({"error": "Too many steps (max 50)"}), 400
+    
+    for i, step in enumerate(steps_data):
+        if not isinstance(step.get('name', ''), str) or not step.get('name'):
+            return jsonify({"error": f"Step {i+1}: 'name' must be a non-empty string"}), 400
+        if not isinstance(step.get('order', 0), int):
+            return jsonify({"error": f"Step {i+1}: 'order' must be an integer"}), 400
+    
     try:
         # Get or create pipeline
         pipeline_description = data.get('pipeline_description') or data.get('description')
