@@ -16,3 +16,7 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 include = ["xray_sdk"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
