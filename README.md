@@ -168,28 +168,40 @@ GET
 ## Project Structure
 
 ```
-├── xray_sdk/          # Python SDK
-│   ├── step.py        # XRayStep dataclass
-│   ├── run.py         # XRayRun with auto-summarization
-│   └── client.py      # HTTP client with spool fallback
-├── xray_api/          # Flask API
-│   ├── app.py         # Flask entry point
-│   ├── models.py      # Database models
-│   ├── routes/        # API endpoints
-│   └── agents/        # Cerebras AI analyzer
-├── examples/          # Example scripts
-├── ARCHITECTURE.md    # Detailed architecture doc
-└── requirements.txt   # Dependencies
+├── xray_sdk/              # Python SDK (PyPI: xray-sdk)
+│   ├── step.py            # XRayStep dataclass
+│   ├── run.py             # XRayRun with auto-summarization
+│   └── client.py          # HTTP client with spool fallback
+├── xray_api/              # Flask API
+│   ├── app.py             # Flask entry point
+│   ├── models.py          # Database models
+│   ├── routes/            # API endpoints (ingest, query, stream)
+│   └── agents/
+│       ├── analyzer.py    # Sliding-window AI analysis
+│       └── llm_adapters/  # Pluggable LLM providers
+│           ├── cerebras.py
+│           ├── openai_adapter.py
+│           ├── anthropic_adapter.py
+│           ├── ollama.py
+│           ├── openrouter.py
+│           └── groq.py
+├── xray_shared/           # Shared utilities (summarization)
+├── tests/                 # Test suite (pytest)
+├── examples/              # Example scripts
+├── ARCHITECTURE.md        # Detailed architecture doc
+└── requirements.txt       # Dependencies
 ```
 
 ## Features
 
 - **End-of-pipeline integration**: Add steps as your pipeline runs, send at the end
+- **Multi-LLM provider support**: Cerebras, OpenAI, Anthropic, Ollama, OpenRouter, Groq
+- **Streaming analysis**: Real-time results via Server-Sent Events
 - **Deterministic summarization**: Large outputs are summarized with head/tail sampling for reproducible debugging
 - **Spool fallback**: If API is down, saves to `.xray_spool/` for later submission
 - **Step intent hints**: Optional one-line descriptions per step improve semantic analysis
 - **Server-side safety net**: The API summarizes oversized inputs/outputs if a client skips SDK summarization
-- **AI-powered analysis**: Uses Cerebras LLM with a 2-step sliding window when needed to identify semantic mismatches and faulty steps
+- **AI-powered analysis**: Uses a 2-step sliding window when needed to identify semantic mismatches and faulty steps
 
 ## Approach
 

@@ -36,7 +36,7 @@ A lightweight debugging system for multi-step AI pipelines that captures executi
 | **Web Framework** | Flask | REST API server |
 | **Database** | PostgreSQL (or SQLite) | Stores pipelines, runs, and steps |
 | **ORM** | SQLAlchemy + Flask-SQLAlchemy | Database models and queries |
-| **LLM Provider** | Cerebras API | AI-powered analysis (gpt-oss-120b) |
+| **LLM Providers** | Cerebras, OpenAI, Anthropic, Ollama, OpenRouter, Groq | AI-powered analysis via pluggable adapters |
 
 ---
 
@@ -286,9 +286,20 @@ Both SDK and API apply summarization as a safety net.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DATABASE_URL` | `sqlite:///xray.db` | PostgreSQL or SQLite connection |
-| `CEREBRAS_API_KEY` | - | **Required.** Cerebras API key |
-| `CEREBRAS_BASE_URL` | `https://api.cerebras.ai/v1` | Cerebras API endpoint |
-| `CEREBRAS_MODEL` | `llama-3.3-70b` | Model for analysis |
+| `XRAY_API_KEY` | - | Optional API key for auth |
+| `LLM_PROVIDER` | `cerebras` | LLM provider (`cerebras`, `openai`, `anthropic`, `ollama`, `openrouter`, `groq`) |
+| `CEREBRAS_API_KEY` | - | Cerebras API key |
+| `CEREBRAS_MODEL` | `llama-3.3-70b` | Cerebras model |
+| `OPENAI_API_KEY` | - | OpenAI API key |
+| `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model |
+| `ANTHROPIC_API_KEY` | - | Anthropic API key |
+| `ANTHROPIC_MODEL` | `claude-3-5-sonnet-20241022` | Anthropic model |
+| `OPENROUTER_API_KEY` | - | OpenRouter API key |
+| `OPENROUTER_MODEL` | `anthropic/claude-3.5-sonnet` | OpenRouter model |
+| `GROQ_API_KEY` | - | Groq API key |
+| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama base URL |
+| `OLLAMA_MODEL` | `llama3` | Ollama model |
 | `XRAY_LOG_THINKING` | `true` | Log analyzer debug output |
 
 ---
@@ -307,12 +318,19 @@ Both SDK and API apply summarization as a safety net.
 │   ├── models.py          # SQLAlchemy models (Pipeline, Run, Step)
 │   ├── routes/
 │   │   ├── ingest.py      # POST /api/ingest
-│   │   └── query.py       # GET/POST query endpoints
+│   │   ├── query.py       # GET/POST query endpoints
+│   │   └── stream.py      # GET /api/analyze/<id>/stream (SSE)
 │   └── agents/
-│       └── analyzer.py    # Cerebras AI sliding-window analysis
+│       ├── analyzer.py    # Sliding-window AI analysis
+│       └── llm_adapters/  # Pluggable LLM providers
 │
+├── xray_shared/           # Shared utilities (summarization)
+│   └── summarize.py       # Summarizer class used by SDK and API
+│
+├── tests/                 # Test suite (pytest)
 ├── examples/              # Example scripts
 ├── requirements.txt       # Dependencies
 ├── ARCHITECTURE.md        # This file
+├── CONTRIBUTING.md        # How to contribute
 └── README.md              # Quick start guide
 ```
