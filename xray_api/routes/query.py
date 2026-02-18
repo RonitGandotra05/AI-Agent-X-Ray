@@ -112,7 +112,9 @@ def search_steps():
     
     step_name = request.args.get('step_name')
     if step_name:
-        query = query.filter(Step.step_name.ilike(f'%{step_name}%'))
+        # Escape SQL wildcard characters to prevent injection
+        safe_name = step_name.replace('%', r'\%').replace('_', r'\_')
+        query = query.filter(Step.step_name.ilike(f'%{safe_name}%', escape='\\'))
     
     pipeline_name = request.args.get('pipeline')
     if pipeline_name:

@@ -7,9 +7,11 @@ flask-cors>=4.0.0
 gunicorn>=21.2.0
 psycopg2-binary>=2.9.9
 
-# CrewAI and LLM
-crewai>=0.1.0
+# LLM (OpenAI-compatible client, used by Cerebras/OpenRouter/Groq adapters)
 openai>=1.0.0
+
+# Optional LLM provider packages (install as needed):
+# pip install anthropic>=0.18.0   # for Anthropic adapter
 
 # Utilities
 python-dotenv>=1.0.0
