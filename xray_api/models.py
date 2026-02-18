@@ -3,7 +3,7 @@ SQLAlchemy models for X-Ray API
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
@@ -16,7 +16,7 @@ class Pipeline(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(255), unique=True, nullable=False)
     description = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
     runs = db.relationship('Run', backref='pipeline', lazy='dynamic')
     
@@ -38,7 +38,7 @@ class Run(db.Model):
     status = db.Column(db.String(50), default='pending')
     run_metadata = db.Column(db.JSON, nullable=True)
     analysis_result = db.Column(db.JSON, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
     steps = db.relationship('Step', backref='run', lazy='dynamic', order_by='Step.step_order')
     
@@ -70,7 +70,7 @@ class Step(db.Model):
     outputs = db.Column(db.JSON, nullable=True)
     reasons = db.Column(db.JSON, nullable=True)
     metrics = db.Column(db.JSON, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
     def to_dict(self):
         return {

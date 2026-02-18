@@ -15,4 +15,4 @@ services:
       - key: CEREBRAS_BASE_URL
         value: https://api.cerebras.ai/v1
       - key: CEREBRAS_MODEL
-        value: llama3.1-8b
+        value: llama-3.3-70b

@@ -9,6 +9,7 @@ import json
 import logging
 from typing import Dict, Any, List
 from .llm_adapters import get_adapter, LLMAdapter
+from xray_shared.summarize import Summarizer
 
 
 class XRayAnalyzer:
@@ -24,10 +25,6 @@ class XRayAnalyzer:
     """
     
     WINDOW_SIZE = 2  # Analyze 2 steps at a time
-    MAX_PAYLOAD_SIZE = 80000  # chars per step side (~20K tokens) - 2 steps = ~40K tokens, safely under 65K limit
-    SAMPLE_SIZE = 100
-    MIN_SAMPLE_SIZE = 10
-    STRING_TRUNCATE = 2000
     
     def __init__(self, provider: str = None):
         """
@@ -41,6 +38,9 @@ class XRayAnalyzer:
         
         # Get the appropriate LLM adapter
         self.adapter: LLMAdapter = get_adapter(provider)
+        
+        # Shared summarizer for server-side safety net
+        self.summarizer = Summarizer()
         
         self.logger = logging.getLogger(__name__)
         if not self.logger.handlers:
@@ -158,66 +158,11 @@ class XRayAnalyzer:
         summarized_steps = []
         for step in run_data.get("steps", []):
             summarized_step = dict(step)
-            summarized_step["inputs"] = self._ensure_within_budget(step.get("inputs"))
-            summarized_step["outputs"] = self._ensure_within_budget(step.get("outputs"))
+            summarized_step["inputs"] = self.summarizer.ensure_within_budget(step.get("inputs"))
+            summarized_step["outputs"] = self.summarizer.ensure_within_budget(step.get("outputs"))
             summarized_steps.append(summarized_step)
         summarized["steps"] = summarized_steps
         return summarized
-
-    def _ensure_within_budget(self, data: Any) -> Any:
-        if data is None:
-            return {}
-        try:
-            size = len(json.dumps(data, default=str))
-        except Exception:
-            size = self.MAX_PAYLOAD_SIZE + 1
-        if size <= self.MAX_PAYLOAD_SIZE:
-            return data
-        # Log that summarization is happening
-        self.logger.info(f"[analyzer] Summarizing large payload: {size} chars -> MAX {self.MAX_PAYLOAD_SIZE} chars")
-        summarized = self._summarize_with_budget(data)
-        new_size = len(json.dumps(summarized, default=str))
-        self.logger.info(f"[analyzer] Summarization complete: {size} -> {new_size} chars")
-        return summarized
-
-    def _summarize_with_budget(self, data: Any) -> Any:
-        sample_size = self.SAMPLE_SIZE
-        summarized = data
-        while True:
-            summarized = self._summarize_once(summarized, sample_size)
-            size = len(json.dumps(summarized, default=str))
-            if size <= self.MAX_PAYLOAD_SIZE or sample_size <= self.MIN_SAMPLE_SIZE:
-                return summarized
-            sample_size = max(self.MIN_SAMPLE_SIZE, sample_size // 2)
-
-    def _summarize_once(self, data: Any, sample_size: int) -> Any:
-        if isinstance(data, dict):
-            summarized = {}
-            for key, value in data.items():
-                if isinstance(value, list):
-                    summarized_list, total_count = self._summarize_list(value, sample_size)
-                    summarized[key] = summarized_list
-                    if total_count is not None:
-                        summarized[f"{key}_total_count"] = total_count
-                else:
-                    summarized[key] = self._summarize_once(value, sample_size)
-            return summarized
-        if isinstance(data, list):
-            summarized_list, _ = self._summarize_list(data, sample_size)
-            return summarized_list
-        if isinstance(data, str) and len(data) > self.STRING_TRUNCATE:
-            overflow = len(data) - self.STRING_TRUNCATE
-            return f"{data[:self.STRING_TRUNCATE]}...[truncated {overflow} chars]"
-        return data
-
-    def _summarize_list(self, items: List[Any], sample_size: int):
-        total_count = None
-        if len(items) > sample_size:
-            total_count = len(items)
-            head_count = sample_size // 2
-            tail_count = sample_size - head_count
-            items = items[:head_count] + items[-tail_count:]
-        return [self._summarize_once(item, sample_size) for item in items], total_count
 
     def _analyze_window(self, window_steps: List[Dict], window_index: int, run_data: Dict) -> Dict[str, Any]:
         """Analyze a window of 2 steps"""
