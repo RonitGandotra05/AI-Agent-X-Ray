@@ -64,17 +64,17 @@ class XRayAnalyzer:
     
     def analyze_run(self, run_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Analyze a pipeline run using sliding-window approach.
+        Analyze a pipeline run using sliding-window approach with cross-window context.
         
-        Analyzes 2 steps at a time to stay under 65K token limit:
-        - Each step can have up to 20K chars (~5K tokens)
-        - 2 steps = ~40K tokens + overhead = safely under 65K
+        Each window receives a summary of the previous window's findings,
+        enabling detection of multi-step issues. Collects ALL faults instead
+        of stopping at the first one.
         
         Args:
             run_data: Dictionary containing pipeline run with steps
             
         Returns:
-            Analysis result with faulty step identification
+            Analysis result with faulty step identification and severity
         """
         steps = run_data.get('steps', [])
         if not steps:
@@ -84,17 +84,21 @@ class XRayAnalyzer:
         sorted_steps = sorted(run_data.get('steps', []), key=lambda s: s.get('step_order', 0))
 
         window_results = []
-        # Always use sliding windows (even for <= WINDOW_SIZE) to keep a single analysis mode
+        prev_context = None  # Cross-window context
+        
         if len(sorted_steps) <= self.WINDOW_SIZE:
-            result = self._analyze_window(sorted_steps, 0, run_data)
+            result = self._analyze_window(sorted_steps, 0, run_data, prev_context)
             window_results.append(result)
         else:
             for i in range(len(sorted_steps) - 1):
                 window = sorted_steps[i:i + self.WINDOW_SIZE]
-                result = self._analyze_window(window, i, run_data)
+                result = self._analyze_window(window, i, run_data, prev_context)
                 window_results.append(result)
+                # Build context for next window (1-line summary)
                 if result.get('faulty_step'):
-                    break
+                    prev_context = f"Previous window found {result.get('severity','error')} in step '{result['faulty_step']}': {result.get('reason','')[:100]}"
+                else:
+                    prev_context = f"Previous window ({sorted_steps[i].get('step_name')} → {sorted_steps[i+1].get('step_name')}): OK"
 
         return self._combine_window_results(window_results, sorted_steps)
 
@@ -115,10 +119,11 @@ class XRayAnalyzer:
         
         total_windows = max(1, len(sorted_steps) - 1) if len(sorted_steps) > self.WINDOW_SIZE else 1
         window_results = []
-        faulty_found = False
+
+        prev_context = None
 
         if len(sorted_steps) <= self.WINDOW_SIZE:
-            result = self._analyze_window(sorted_steps, 0, run_data)
+            result = self._analyze_window(sorted_steps, 0, run_data, prev_context)
             window_results.append(result)
             yield {
                 "event": "window",
@@ -129,12 +134,10 @@ class XRayAnalyzer:
                     "result": result
                 }
             }
-            if result.get('faulty_step'):
-                faulty_found = True
         else:
             for i in range(len(sorted_steps) - 1):
                 window = sorted_steps[i:i + self.WINDOW_SIZE]
-                result = self._analyze_window(window, i, run_data)
+                result = self._analyze_window(window, i, run_data, prev_context)
                 window_results.append(result)
                 
                 yield {
@@ -147,9 +150,11 @@ class XRayAnalyzer:
                     }
                 }
                 
+                # Build context for next window
                 if result.get('faulty_step'):
-                    faulty_found = True
-                    break
+                    prev_context = f"Previous window found {result.get('severity','error')} in step '{result['faulty_step']}': {result.get('reason','')[:100]}"
+                else:
+                    prev_context = f"Previous window ({sorted_steps[i].get('step_name')} → {sorted_steps[i+1].get('step_name')}): OK"
 
         # Yield final combined result
         final_result = self._combine_window_results(window_results, sorted_steps)
@@ -179,9 +184,9 @@ class XRayAnalyzer:
         summarized["steps"] = summarized_steps
         return summarized
 
-    def _analyze_window(self, window_steps: List[Dict], window_index: int, run_data: Dict) -> Dict[str, Any]:
-        """Analyze a window of 2 steps, tracking token usage."""
-        prompt = self._build_window_prompt(window_steps, window_index, run_data)
+    def _analyze_window(self, window_steps: List[Dict], window_index: int, run_data: Dict, prev_context: str = None) -> Dict[str, Any]:
+        """Analyze a window of 2 steps, with optional cross-window context."""
+        prompt = self._build_window_prompt(window_steps, window_index, run_data, prev_context)
         if self.log_thinking:
             self.logger.info("[analyzer] window_prompt window=%s size=%s", window_index + 1, len(prompt))
         
@@ -209,63 +214,61 @@ class XRayAnalyzer:
             return {"error": str(e), "faulty_step": None, "_token_usage": {}}
     
     def _get_system_prompt(self) -> str:
-        """System prompt for window analysis (2 steps)"""
+        """System prompt for window analysis with severity levels."""
         return """You are analyzing a WINDOW of 2 consecutive steps from a pipeline.
 
 ## Understanding the Pipeline & Steps
-First, use the **pipeline description** to understand what TYPE of pipeline this is:
-- Is it a data processing pipeline? (ETL, data transformation)
-- Is it an AI/ML pipeline? (inference, embeddings, classification)
-- Is it a document pipeline? (parsing, extraction, summarization)
-- Is it an automation pipeline? (scraping, API calls, integrations)
-
-Then, use each **step description** to understand what TYPE of step it is:
-- Data retrieval steps (fetching from DB, API, files)
-- Transformation steps (parsing, filtering, mapping)
-- AI/LLM steps (generation, embedding, classification)
-- Output steps (writing, sending, storing)
+Use the **pipeline description** to understand what TYPE of pipeline this is (data processing, AI/ML, document, automation, etc.).
+Use each **step description** to understand what each step does.
 
 ## Check Data Flow
-With the pipeline type and step types in mind, check if data flows correctly:
 1. Does Step 2's input match Step 1's output?
 2. Are there semantic mismatches given what each step is supposed to do?
 3. Did anything get lost or corrupted in the transition?
 4. Does the output format match what the next step type expects?
 
-## Use Available Context
-- **Reasons**: If present, shows why items were dropped/rejected - useful for understanding filtering logic
-- **Metrics**: If present, shows step performance (e.g., elimination_rate) - useful for spotting anomalies
+## Context from Previous Windows
+If provided, use the "Previous context" to understand what was already analyzed. This helps detect multi-step issues that span several transitions.
 
-## IMPORTANT: Config Inputs vs Data Flow Inputs
-Many step inputs are **configuration parameters** (filters, thresholds, limits, options) that come from settings, NOT from the previous step. Examples:
-- `min_rating`, `max_price`, `limit`, `threshold`, `filter_by`, `sort_order`
-- These are expected and normal - do NOT flag them as "missing data flow"
-
-Also, data often flows **implicitly** between steps (via shared state, databases, or function chaining) without being explicitly declared in inputs. If a step has only config inputs, assume the data flows implicitly and focus on whether the **outputs make sense** given the step's purpose.
+## IMPORTANT: Config vs Data Flow
+Many inputs are config parameters (min_rating, max_price, limit) from settings, NOT from the previous step — these are normal.
+Data often flows implicitly (shared state, databases). Focus on whether outputs make sense for the step's purpose.
 
 **Only flag as faulty if:**
-- Outputs contain wrong/corrupted data that doesn't match the step's purpose
-- There's a clear semantic mismatch (e.g., laptop items in a phone case filter)
-- The outputs contradict the config (e.g., items with rating 4.1 when min_rating was 4.5)
+- Outputs contain wrong/corrupted data
+- Clear semantic mismatch (e.g., laptop items in phone case filter)
+- Outputs contradict config (e.g., items with rating 4.1 when min_rating is 4.5)
 
 Respond in valid JSON:
 {
-    "faulty_step": "step_name or null if transition looks OK",
+    "faulty_step": "step_name or null",
     "faulty_step_order": step_number or null,
-    "reason": "What went wrong between these steps",
-    "transition_status": "ok|warning|error"
-}"""
+    "reason": "What went wrong",
+    "severity": "ok|warning|error|critical",
+    "suggestion": "How to fix it or null"
+}
 
-    def _build_window_prompt(self, steps: List[Dict], window_index: int, run_data: Dict) -> str:
-        """Build prompt for a 2-step window using compact JSON to minimize tokens."""
+Severity levels:
+- **ok**: Transition is correct
+- **warning**: Minor concern but data flows correctly (e.g., unusual elimination rate)
+- **error**: Clear data flow or semantic problem
+- **critical**: Data corruption, total mismatch, or pipeline-breaking issue"""
+
+    def _build_window_prompt(self, steps: List[Dict], window_index: int, run_data: Dict, prev_context: str = None) -> str:
+        """Build prompt for a 2-step window with optional cross-window context."""
         pipeline_name = run_data.get('pipeline_name', 'unknown')
         pipeline_description = run_data.get('pipeline_description') or run_data.get('description') or 'No description provided'
         
         parts = [
             f"## Pipeline: {pipeline_name}",
             f"**Purpose:** {pipeline_description}",
-            f"## Window {window_index + 1}: Steps {steps[0].get('step_order')} → {steps[-1].get('step_order')}",
         ]
+        
+        # Cross-window context (keeps LLM informed about prior analysis)
+        if prev_context:
+            parts.append(f"**Previous context:** {prev_context}")
+        
+        parts.append(f"## Window {window_index + 1}: Steps {steps[0].get('step_order')} → {steps[-1].get('step_order')}")
         
         for step in steps:
             parts.append(f"### Step {step.get('step_order', '?')}: {step.get('step_name', 'unknown')}")
@@ -297,32 +300,49 @@ Respond in valid JSON:
         window_results: List[Dict],
         all_steps: List[Dict],
     ) -> Dict[str, Any]:
-        """Combine results from multiple window analyses, aggregating token usage."""
+        """Combine results from all windows, collecting every issue found."""
         # Aggregate token usage across all windows
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        all_issues = []
+        
         for result in window_results:
             usage = result.pop("_token_usage", {})
             for key in total_usage:
                 total_usage[key] += usage.get(key, 0)
-        
-        # Find first faulty step
-        for result in window_results:
+            
             if result.get('faulty_step'):
-                return {
+                all_issues.append({
                     "faulty_step": result['faulty_step'],
                     "faulty_step_order": result.get('faulty_step_order'),
                     "reason": result.get('reason', ''),
-                    "suggestion": result.get('suggestion', ''),
-                    "analysis_method": "sliding_window",
-                    "windows_analyzed": len(window_results),
-                    "token_usage": total_usage,
-                }
+                    "severity": result.get('severity', 'error'),
+                    "suggestion": result.get('suggestion'),
+                })
+        
+        if all_issues:
+            # Primary issue is the most severe
+            severity_rank = {'critical': 4, 'error': 3, 'warning': 2, 'ok': 1}
+            all_issues.sort(key=lambda x: severity_rank.get(x.get('severity', 'error'), 3), reverse=True)
+            primary = all_issues[0]
+            
+            return {
+                "faulty_step": primary['faulty_step'],
+                "faulty_step_order": primary.get('faulty_step_order'),
+                "reason": primary.get('reason', ''),
+                "severity": primary.get('severity', 'error'),
+                "suggestion": primary.get('suggestion', ''),
+                "analysis_method": "sliding_window",
+                "windows_analyzed": len(window_results),
+                "token_usage": total_usage,
+                "all_issues": all_issues if len(all_issues) > 1 else None,
+            }
         
         # No issues found
         return {
             "faulty_step": None,
             "faulty_step_order": None,
             "reason": "All step transitions appear correct",
+            "severity": "ok",
             "suggestion": None,
             "analysis_method": "sliding_window",
             "windows_analyzed": len(window_results),
