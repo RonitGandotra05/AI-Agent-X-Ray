@@ -159,7 +159,16 @@ class XRayAnalyzer:
         }
 
     def _summarize_run_data(self, run_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Apply server-side summarization to keep prompts bounded."""
+        """Apply server-side summarization to keep prompts bounded.
+        
+        Skips summarization if the SDK already processed the data
+        (indicated by _sdk_summarized flag), avoiding redundant work.
+        """
+        # If SDK already summarized, skip the expensive re-processing
+        if run_data.get("_sdk_summarized"):
+            self.logger.debug("[analyzer] skipping server-side summarization (SDK already processed)")
+            return run_data
+        
         summarized = dict(run_data)
         summarized_steps = []
         for step in run_data.get("steps", []):

@@ -59,7 +59,8 @@ class XRayRun:
             "pipeline_name": self.pipeline_name,
             "pipeline_description": self.description,
             "metadata": self.metadata,
-            "steps": [step.to_dict() for step in self.steps]
+            "steps": [step.to_dict() for step in self.steps],
+            "_sdk_summarized": True,  # Signal to API: don't re-summarize
         }
     
     def __repr__(self) -> str:
