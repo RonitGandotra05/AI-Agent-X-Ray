@@ -25,6 +25,7 @@ class XRayAnalyzer:
     """
     
     WINDOW_SIZE = 2  # Analyze 2 steps at a time
+    _system_prompt_cache = None  # Cache system prompt across windows
     
     def __init__(self, provider: str = None):
         """
@@ -42,6 +43,11 @@ class XRayAnalyzer:
         # Shared summarizer for server-side safety net
         self.summarizer = Summarizer()
         
+        # Cache the system prompt once (it's the same for every window)
+        if XRayAnalyzer._system_prompt_cache is None:
+            XRayAnalyzer._system_prompt_cache = self._get_system_prompt()
+        self._cached_system_prompt = XRayAnalyzer._system_prompt_cache
+
         self.logger = logging.getLogger(__name__)
         if not self.logger.handlers:
             logging.basicConfig(level=logging.DEBUG if self.log_thinking else logging.INFO)
@@ -172,7 +178,7 @@ class XRayAnalyzer:
         
         try:
             messages = [
-                {"role": "system", "content": self._get_system_prompt()},
+                {"role": "system", "content": self._cached_system_prompt},
                 {"role": "user", "content": prompt}
             ]
             
@@ -241,39 +247,37 @@ Respond in valid JSON:
 }"""
 
     def _build_window_prompt(self, steps: List[Dict], window_index: int, run_data: Dict) -> str:
-        """Build prompt for a 2-step window"""
+        """Build prompt for a 2-step window using compact JSON to minimize tokens."""
         pipeline_name = run_data.get('pipeline_name', 'unknown')
         pipeline_description = run_data.get('pipeline_description') or run_data.get('description') or 'No description provided'
         
         parts = [
             f"## Pipeline: {pipeline_name}",
-            f"**Pipeline Description (use this to understand the pipeline type):** {pipeline_description}",
-            "",
+            f"**Purpose:** {pipeline_description}",
             f"## Window {window_index + 1}: Steps {steps[0].get('step_order')} → {steps[-1].get('step_order')}",
-            ""
         ]
         
         for step in steps:
             parts.append(f"### Step {step.get('step_order', '?')}: {step.get('step_name', 'unknown')}")
             step_description = step.get('step_description') or step.get('description')
             if step_description:
-                parts.append(f"**Step Type/Purpose (use this to understand what this step does):** {step_description}")
-            else:
-                parts.append("**Step Type/Purpose:** Not provided - infer from step name and data")
-            parts.append(f"**Inputs:** {json.dumps(step.get('inputs', {}), indent=2, default=str)}")
-            parts.append(f"**Outputs:** {json.dumps(step.get('outputs', {}), indent=2, default=str)}")
+                parts.append(f"**Intent:** {step_description}")
+            # Compact JSON — no indent, minimal separators (~35-40% fewer tokens)
+            inputs = step.get('inputs', {})
+            outputs = step.get('outputs', {})
+            if inputs:
+                parts.append(f"**Inputs:** {json.dumps(inputs, separators=(',',':'), default=str)}")
+            if outputs:
+                parts.append(f"**Outputs:** {json.dumps(outputs, separators=(',',':'), default=str)}")
             
-            # Include reasons if present (explains why items were dropped/rejected)
-            reasons = step.get('reasons', {})
+            # Only include reasons and metrics if non-empty (skip {} noise)
+            reasons = step.get('reasons')
             if reasons:
-                parts.append(f"**Reasons (items dropped/rejected):** {json.dumps(reasons, indent=2, default=str)}")
+                parts.append(f"**Reasons:** {json.dumps(reasons, separators=(',',':'), default=str)}")
             
-            # Include metrics if present (step-level performance data)
-            metrics = step.get('metrics', {})
+            metrics = step.get('metrics')
             if metrics:
-                parts.append(f"**Metrics:** {json.dumps(metrics, indent=2, default=str)}")
-            
-            parts.append("")
+                parts.append(f"**Metrics:** {json.dumps(metrics, separators=(',',':'), default=str)}")
         
         parts.append("Analyze the transition between these steps. Consider the pipeline type and step purposes when evaluating data flow.")
         return "\n".join(parts)
