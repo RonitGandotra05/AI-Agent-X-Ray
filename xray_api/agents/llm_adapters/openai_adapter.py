@@ -3,7 +3,7 @@ OpenAI LLM Adapter
 """
 
 import os
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from openai import OpenAI
 from .base import LLMAdapter
 
@@ -39,6 +39,27 @@ class OpenAIAdapter(LLMAdapter):
             max_tokens=max_tokens
         )
         return response.choices[0].message.content
+
+    def chat_completion_with_usage(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.1,
+        max_tokens: int = 1000
+    ) -> Tuple[str, Dict[str, int]]:
+        response = self.client.chat.completions.create(
+            model=self._model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+        usage = {}
+        if response.usage:
+            usage = {
+                "prompt_tokens": response.usage.prompt_tokens or 0,
+                "completion_tokens": response.usage.completion_tokens or 0,
+                "total_tokens": response.usage.total_tokens or 0,
+            }
+        return response.choices[0].message.content, usage
     
     @property
     def provider_name(self) -> str:
@@ -47,3 +68,4 @@ class OpenAIAdapter(LLMAdapter):
     @property
     def model_name(self) -> str:
         return self._model
+

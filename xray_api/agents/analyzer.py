@@ -180,7 +180,7 @@ class XRayAnalyzer:
         return summarized
 
     def _analyze_window(self, window_steps: List[Dict], window_index: int, run_data: Dict) -> Dict[str, Any]:
-        """Analyze a window of 2 steps"""
+        """Analyze a window of 2 steps, tracking token usage."""
         prompt = self._build_window_prompt(window_steps, window_index, run_data)
         if self.log_thinking:
             self.logger.info("[analyzer] window_prompt window=%s size=%s", window_index + 1, len(prompt))
@@ -191,21 +191,22 @@ class XRayAnalyzer:
                 {"role": "user", "content": prompt}
             ]
             
-            result_text = self.adapter.chat_completion(
+            result_text, token_usage = self.adapter.chat_completion_with_usage(
                 messages=messages,
                 temperature=0.1,
                 max_tokens=1000
             )
             
             if self.log_thinking:
-                self.logger.info("[analyzer] window_raw_response chars=%s", len(result_text or ""))
+                self.logger.info("[analyzer] window_raw_response chars=%s tokens=%s", len(result_text or ""), token_usage)
             parsed = self._parse_analysis_response(result_text)
+            parsed["_token_usage"] = token_usage
             if self.log_thinking:
                 self.logger.info("[analyzer] window_parsed=%s", parsed)
             return parsed
             
         except Exception as e:
-            return {"error": str(e), "faulty_step": None}
+            return {"error": str(e), "faulty_step": None, "_token_usage": {}}
     
     def _get_system_prompt(self) -> str:
         """System prompt for window analysis (2 steps)"""
@@ -296,7 +297,14 @@ Respond in valid JSON:
         window_results: List[Dict],
         all_steps: List[Dict],
     ) -> Dict[str, Any]:
-        """Combine results from multiple window analyses"""
+        """Combine results from multiple window analyses, aggregating token usage."""
+        # Aggregate token usage across all windows
+        total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        for result in window_results:
+            usage = result.pop("_token_usage", {})
+            for key in total_usage:
+                total_usage[key] += usage.get(key, 0)
+        
         # Find first faulty step
         for result in window_results:
             if result.get('faulty_step'):
@@ -306,7 +314,8 @@ Respond in valid JSON:
                     "reason": result.get('reason', ''),
                     "suggestion": result.get('suggestion', ''),
                     "analysis_method": "sliding_window",
-                    "windows_analyzed": len(window_results)
+                    "windows_analyzed": len(window_results),
+                    "token_usage": total_usage,
                 }
         
         # No issues found
@@ -317,6 +326,7 @@ Respond in valid JSON:
             "suggestion": None,
             "analysis_method": "sliding_window",
             "windows_analyzed": len(window_results),
+            "token_usage": total_usage,
             "all_steps_analysis": [
                 {"step": s.get('step_name'), "status": "ok", "note": "Transition verified"}
                 for s in all_steps
