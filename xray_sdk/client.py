@@ -7,8 +7,9 @@ import json
 import time
 import logging
 import requests
+from concurrent.futures import ThreadPoolExecutor, Future
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable
 from .run import XRayRun
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,7 @@ class XRayClient:
         self.timeout = timeout
         self.retries = retries
         self.retry_delay = retry_delay
+        self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="xray")
     
     def _headers(self) -> Dict[str, str]:
         """Build headers for API requests."""
@@ -111,6 +113,53 @@ class XRayClient:
             "spool_path": str(spool_path),
             "retries_attempted": self.retries
         }
+    
+    def send_async(self, run: XRayRun, analyze: bool = True) -> Future:
+        """
+        Send a run in a background thread, returning a Future.
+        
+        Use this when you want to fire off the send and optionally
+        check the result later without blocking the main thread.
+        
+        Args:
+            run: The XRayRun to send
+            analyze: Whether to trigger AI analysis
+            
+        Returns:
+            concurrent.futures.Future that resolves to the API response dict
+            
+        Example:
+            future = client.send_async(run)
+            # ... do other work ...
+            result = future.result(timeout=60)
+        """
+        return self._executor.submit(self.send, run, analyze)
+    
+    def send_background(
+        self,
+        run: XRayRun,
+        analyze: bool = True,
+        callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> None:
+        """
+        Fire-and-forget send. Optionally calls a callback with the result.
+        
+        Use this when you don't care about the result and just want to
+        send the data without blocking.
+        
+        Args:
+            run: The XRayRun to send
+            analyze: Whether to trigger AI analysis
+            callback: Optional function called with the result dict when done
+            
+        Example:
+            client.send_background(run)  # fire and forget
+            client.send_background(run, callback=lambda r: print(r))  # with logging
+        """
+        future = self._executor.submit(self.send, run, analyze)
+        if callback:
+            future.add_done_callback(lambda f: callback(f.result()))
+
     
     def spool(self, run: XRayRun, spool_dir: Optional[str] = None) -> Path:
         """
