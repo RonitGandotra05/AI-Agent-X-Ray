@@ -5,7 +5,7 @@ Stream routes - Server-Sent Events for real-time analysis
 import json
 from flask import Blueprint, Response
 from ..models import Run
-from ..agents.analyzer import XRayAnalyzer
+from .shared import get_analyzer
 
 stream_bp = Blueprint('stream', __name__)
 
@@ -31,7 +31,7 @@ def stream_analysis(run_id):
     
     def generate():
         try:
-            analyzer = XRayAnalyzer()
+            analyzer = get_analyzer()
             run_dict = run.to_dict(include_steps=True)
             
             for event in analyzer.analyze_run_streaming(run_dict):

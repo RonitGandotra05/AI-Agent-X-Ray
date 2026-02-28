@@ -4,7 +4,7 @@ Ingest routes - Receive pipeline run data
 
 from flask import Blueprint, request, jsonify
 from ..models import db, Pipeline, Run, Step
-from ..agents.analyzer import XRayAnalyzer
+from .shared import get_analyzer
 
 ingest_bp = Blueprint('ingest', __name__)
 
@@ -91,7 +91,7 @@ def ingest_run():
         
         if should_analyze:
             try:
-                analyzer = XRayAnalyzer()
+                analyzer = get_analyzer()
                 run_dict = run.to_dict(include_steps=True)
                 analysis_result = analyzer.analyze_run(run_dict)
                 
