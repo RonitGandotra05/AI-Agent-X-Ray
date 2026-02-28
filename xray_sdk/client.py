@@ -236,45 +236,49 @@ class XRayClient:
     
     def flush_spool(self, spool_dir: Optional[str] = None) -> Dict[str, Any]:
         """
-        Send the newest spooled run to the API and delete all spooled files.
+        Send ALL spooled runs to the API (oldest first).
+        
+        Each file is deleted only after its own successful send.
+        Failed files are kept on disk for the next flush attempt.
         
         Args:
             spool_dir: Directory containing spooled files
             
         Returns:
-            Summary of flush results
+            Summary with flushed/failed counts and per-file details
         """
         spool_dir = Path(spool_dir or self.DEFAULT_SPOOL_DIR)
         if not spool_dir.exists():
             return {"flushed": 0, "failed": 0}
 
-        files = list(spool_dir.glob("*.json"))
+        files = sorted(spool_dir.glob("*.json"), key=lambda p: p.stat().st_mtime)
         if not files:
             return {"flushed": 0, "failed": 0}
 
-        newest = max(files, key=lambda p: p.stat().st_mtime)
-        results = {"flushed": 0, "failed": 0, "errors": [], "sent_file": str(newest)}
+        results = {"flushed": 0, "failed": 0, "errors": [], "total_files": len(files)}
 
-        try:
-            with open(newest) as f:
-                data = json.load(f)
+        for filepath in files:
+            try:
+                with open(filepath) as f:
+                    data = json.load(f)
 
-            response = requests.post(
-                f"{self.api_url}/api/ingest",
-                json=data,
-                headers=self._headers(),
-                timeout=self.timeout
-            )
-            response.raise_for_status()
-            response_json = response.json()
-            results["flushed"] = 1
-            results["response"] = response_json
-
-            # Delete all spooled files after successful send of newest.
-            for filepath in files:
+                response = requests.post(
+                    f"{self.api_url}/api/ingest",
+                    json=data,
+                    headers=self._headers(),
+                    timeout=self.timeout
+                )
+                response.raise_for_status()
+                results["flushed"] += 1
+                
+                # Only delete after successful send
                 filepath.unlink()
-        except Exception as e:
-            results["failed"] = 1
-            results["errors"].append({"file": str(newest), "error": str(e)})
+                logger.info("[xray] flushed spooled run: %s", filepath.name)
+                
+            except Exception as e:
+                results["failed"] += 1
+                results["errors"].append({"file": str(filepath), "error": str(e)})
+                logger.warning("[xray] failed to flush %s: %s", filepath.name, e)
 
         return results
+
