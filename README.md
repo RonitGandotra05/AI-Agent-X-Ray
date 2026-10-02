@@ -204,7 +204,7 @@ reasons/metrics/metadata are dicts.
 
 | Server environment | Default | Meaning |
 | --- | --- | --- |
-| `DATABASE_URL` | `sqlite:///xray.db` | SQLite or PostgreSQL connection |
+| `DATABASE_URL` | `sqlite:///xray.db` | SQLite or PostgreSQL connection; bare `postgres://` and `postgresql://` URLs use the packaged psycopg2 driver |
 | `XRAY_API_KEY` | unset | API authentication; `/health` remains public |
 | `XRAY_CORS_ORIGINS` | unset | Comma-separated browser origins allowed access |
 | `LLM_PROVIDER` | `cerebras` | `openai`, `cerebras`, `groq`, `openrouter`, `anthropic`, or `ollama` |

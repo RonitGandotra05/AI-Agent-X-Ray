@@ -18,8 +18,6 @@ def create_app(config: Optional[Mapping[str, Any]] = None) -> Flask:
     """Apply config before initialization; tests may inject XRAY_ANALYZER."""
     app = Flask(__name__)
     database_url = os.getenv("DATABASE_URL", "sqlite:///xray.db")
-    if database_url.startswith("postgres://"):
-        database_url = "postgresql://" + database_url[len("postgres://"):]
     app.config.update(SQLALCHEMY_DATABASE_URI=database_url,
                       SQLALCHEMY_TRACK_MODIFICATIONS=False,
                       SQLALCHEMY_ENGINE_OPTIONS={"pool_pre_ping": True},
@@ -29,6 +27,16 @@ def create_app(config: Optional[Mapping[str, Any]] = None) -> Flask:
                       XRAY_CREATE_TABLES=True)
     if config:
         app.config.update(config)
+    # Match the driver installed by the postgres extra instead of relying on
+    # SQLAlchemy's default, which changed from psycopg2 to psycopg in 2.1.
+    database_url = app.config["SQLALCHEMY_DATABASE_URI"]
+    if isinstance(database_url, str):
+        for prefix in ("postgres://", "postgresql://"):
+            if database_url.startswith(prefix):
+                app.config["SQLALCHEMY_DATABASE_URI"] = (
+                    "postgresql+psycopg2://" + database_url[len(prefix):]
+                )
+                break
     if app.config["XRAY_API_KEY"] is not None and not isinstance(app.config["XRAY_API_KEY"], str):
         raise ValueError("XRAY_API_KEY must be a string or None")
     if not isinstance(app.config["XRAY_CORS_ORIGINS"], (str, list, tuple)):

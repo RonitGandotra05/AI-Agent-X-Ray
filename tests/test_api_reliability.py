@@ -52,6 +52,40 @@ def test_factory_uses_database_overrides_before_initialization(app):
         assert db.engine.url.database == ":memory:"
 
 
+@pytest.mark.parametrize("scheme", ["postgres", "postgresql", "postgresql+psycopg2"])
+@pytest.mark.parametrize("source", ["environment", "config"])
+def test_postgres_startup_uses_packaged_driver(monkeypatch, scheme, source):
+    pytest.importorskip("psycopg2")
+    uri = scheme + "://user:p%40ss@localhost:5432/xray?sslmode=require"
+    config = {"TESTING": True, "XRAY_CREATE_TABLES": False}
+    if source == "environment":
+        monkeypatch.setenv("DATABASE_URL", uri)
+    else:
+        monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+        config["SQLALCHEMY_DATABASE_URI"] = uri
+    app = create_app(config)
+    with app.app_context():
+        # Engine construction loads the real driver without opening a connection.
+        assert db.engine.dialect.driver == "psycopg2"
+        assert db.engine.dialect.dbapi.__name__ == "psycopg2"
+        assert db.engine.url.password == "p@ss"
+        assert db.engine.url.database == "xray"
+        assert db.engine.url.query == {"sslmode": "require"}
+        db.engine.dispose()
+
+
+def test_factory_preserves_explicit_postgres_driver(monkeypatch):
+    uri = "postgresql+psycopg://user:password@localhost/xray"
+
+    def inspect_config(app):
+        assert app.config["SQLALCHEMY_DATABASE_URI"] == uri
+        raise RuntimeError("configuration inspected")
+
+    monkeypatch.setattr(db, "init_app", inspect_config)
+    with pytest.raises(RuntimeError, match="configuration inspected"):
+        create_app({"SQLALCHEMY_DATABASE_URI": uri, "XRAY_CREATE_TABLES": False})
+
+
 @pytest.mark.parametrize("invalid", [[], [1], "text", 1, None])
 def test_ingestion_requires_json_object(client, invalid):
     response = client.post("/api/ingest", data=json.dumps(invalid), content_type="application/json")
