@@ -1,15 +1,9 @@
 """Scenario: call GET endpoints via SDK helpers."""
 
-from dotenv import load_dotenv
-
-import os
 from xray_sdk import XRayClient
 
-
-load_dotenv()
-
 def main() -> None:
-    client = XRayClient("https://ai-agent-x-ray.onrender.com", api_key=os.getenv("XRAY_API_KEY"))
+    client = XRayClient()
 
     pipelines = client.list_pipelines()
     print({"pipelines": pipelines})
@@ -25,6 +19,7 @@ def main() -> None:
 
     if not run_id:
         print({"error": "no runs found"})
+        client.close()
         return
 
     run_detail = client.get_run(run_id)
@@ -36,6 +31,7 @@ def main() -> None:
     steps = client.search_steps(limit=5)
     print({"steps": steps})
 
+    client.close()
 
 if __name__ == "__main__":
     main()

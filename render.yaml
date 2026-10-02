@@ -4,8 +4,11 @@ services:
     env: python
     plan: starter
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn xray_api.wsgi:app
+    startCommand: gunicorn --worker-class gthread --threads 4 --timeout 300 xray_api.wsgi:app
+    healthCheckPath: /health
     envVars:
+      - key: LLM_PROVIDER
+        value: cerebras
       - key: DATABASE_URL
         sync: false
       - key: XRAY_API_KEY
@@ -15,4 +18,4 @@ services:
       - key: CEREBRAS_BASE_URL
         value: https://api.cerebras.ai/v1
       - key: CEREBRAS_MODEL
-        value: llama-3.3-70b
+        value: gpt-oss-120b

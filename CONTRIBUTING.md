@@ -1,81 +1,38 @@
-# Contributing to X-Ray
+# Contributing
 
-## Development Setup
+Use Python 3.9 or later and keep base SDK dependencies minimal.
 
 ```bash
-# Clone and set up virtual environment
-git clone https://github.com/RonitGandotra05/AI-Agent-X-Ray.git
-cd AI-Agent-X-Ray
-python3 -m venv .venv
+python -m venv .venv
 source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-pip install pytest
-
-# Copy env template and fill in your keys
-cp .env.example .env
-
-# Start the API (SQLite for local dev)
-python3 -m xray_api.app
+python -m pip install -e '.[server,openai,anthropic,langchain,dev]'
+python -m pytest
+python -m build
+python -m twine check --strict dist/*
 ```
 
-## Running Tests
+Tests isolate databases and substitute deterministic providers. Actual localhost
+HTTP tests cover SDK integration, background/asyncio sends, replay and streaming.
+No external keys are required. Do not point tests at an existing database.
 
-```bash
-python -m pytest          # all tests
-python -m pytest tests/test_routes.py  # just API tests
-python -m pytest -k "summarize"        # tests matching a keyword
-```
+Changes should preserve public imports, positional arguments, and legacy server
+response fields. Add regression tests for observable failures and user workflows;
+avoid tests that only repeat the implementation. Update README examples whenever
+public behavior changes. Keep diagnostics honest about incomplete evidence and
+unknown token usage.
 
-## Adding a New LLM Adapter
+The package version lives in `xray_sdk/_version.py`; build metadata reads it
+without importing optional dependencies. Before releasing, build a wheel from
+its source distribution, install both artifacts in clean environments, and run
+`scripts/smoke_installed.py` with Python's `-I` flag. Add `--server` after installing
+the server extra. CI covers Python 3.9–3.14.
 
-1. Create `xray_api/agents/llm_adapters/your_provider.py`
-2. Extend `LLMAdapter` base class from `base.py`
-3. Implement `chat_completion()`, `provider_name`, and `model_name`
-4. Register it in `llm_adapters/__init__.py` (import + add to `adapters` dict in `get_adapter`)
-5. Add corresponding env vars (API key, model name) to `.env.example`
+Provider implementations extend `LLMAdapter` and return text plus optional real
+usage. OpenAI-compatible providers share `openai_compatible.py`; preserve small
+provider classes for existing imports. Validate finish/refusal/empty responses,
+apply explicit timeout/retry settings, and import optional dependencies lazily.
+Register new providers in `llm_adapters/__init__.py` and document configuration.
 
-**Template:**
-```python
-import os
-from typing import List, Dict
-from .base import LLMAdapter
-
-class YourAdapter(LLMAdapter):
-    def __init__(self):
-        self.api_key = os.getenv('YOUR_API_KEY')
-        self._model = os.getenv('YOUR_MODEL', 'default-model')
-        if not self.api_key:
-            raise ValueError("YOUR_API_KEY not set")
-        # Initialize your client here
-
-    def chat_completion(self, messages: List[Dict[str, str]], temperature=0.1, max_tokens=1000) -> str:
-        # Call your LLM and return the response text
-        pass
-
-    @property
-    def provider_name(self) -> str:
-        return "your_provider"
-
-    @property
-    def model_name(self) -> str:
-        return self._model
-```
-
-## Project Layout
-
-| Directory | Purpose |
-|-----------|---------|
-| `xray_sdk/` | Python SDK published to PyPI |
-| `xray_api/` | Flask API server |
-| `xray_shared/` | Shared utilities (summarization) used by both SDK and API |
-| `tests/` | Test suite (pytest) |
-| `examples/` | Example pipeline scripts |
-
-## Commit Messages
-
-Keep commit messages human-readable and descriptive. Avoid conventional commit prefixes like `feat:` or `fix:`. Examples:
-- `add streaming analysis via server-sent events`
-- `clean up deps, fix sql injection in search`
-- `extract shared summarization, fix deprecated datetime`
+Use descriptive commits scoped to meaningful changes. Do not publish a release
+without project-owner authorization and configured PyPI credentials. Proprietary
+metadata is retained; changing the license requires an explicit owner decision.

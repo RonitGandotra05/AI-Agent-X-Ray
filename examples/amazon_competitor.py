@@ -5,20 +5,9 @@ This demonstrates how to use the X-Ray SDK to debug a multi-step
 competitor selection pipeline.
 """
 
-from dotenv import load_dotenv
-
-
-import sys
-import os
-
-load_dotenv()
-
-sys.path.insert(0, '.')
-
 """Demo: competitor selection pipeline with multiple steps."""
 
 from xray_sdk import XRayClient, XRayRun, XRayStep
-
 
 def main():
     # Simulate a pipeline execution with a bug in step 1
@@ -96,7 +85,7 @@ def main():
         order=3,
         description="Data transformation step - filters candidates by price range, rating, and category to narrow down relevant products.",
         inputs={
-            "candidates_count": 250,
+            "candidates_count": 500,
             "filters": {
                 "price_range": [10, 50],
                 "min_rating": 4.0,
@@ -148,7 +137,7 @@ def main():
     print("Sending to X-Ray API for analysis...")
     print("=" * 60)
     
-    client = XRayClient(api_url="https://ai-agent-x-ray.onrender.com", api_key=os.getenv("XRAY_API_KEY"))
+    client = XRayClient()
     result = client.send(run)
     
     print("\nAPI Response:")
@@ -166,8 +155,9 @@ def main():
             print(f"\n📝 Reason: {analysis.get('reason', 'N/A')}")
             print(f"\n💡 Suggestion: {analysis.get('suggestion', 'N/A')}")
         else:
-            print("\n✅ No issues detected in the pipeline.")
+            print("\nNo observed issues; analysis status:", analysis.get('analysis_status'))
 
+    client.close()
 
 if __name__ == "__main__":
     main()
