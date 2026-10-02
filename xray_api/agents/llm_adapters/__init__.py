@@ -25,7 +25,10 @@ def get_adapter(provider: str = None) -> LLMAdapter:
     import os
     
     if provider is None:
-        provider = os.getenv('LLM_PROVIDER', 'cerebras').lower()
+        provider = os.getenv('LLM_PROVIDER', 'cerebras')
+    if not isinstance(provider, str):
+        raise ValueError("LLM provider must be a string")
+    provider = provider.strip().lower()
     
     adapters = {
         'cerebras': CerebrasAdapter,

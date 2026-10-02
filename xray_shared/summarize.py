@@ -1,30 +1,23 @@
-"""
-Shared summarization utilities for X-Ray SDK and API.
-
-Provides deterministic head/tail sampling of large data structures
-to keep payloads within LLM context token limits.
-"""
+"""Deterministic, explicitly lossy sampling with a hard serialized-size bound."""
 
 import json
-import logging
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
-logger = logging.getLogger(__name__)
+from .validation import positive_int
 
 
 class Summarizer:
+    """Preserve small JSON values; sample oversized values without an LLM call.
+
+    Limits are JSON characters, not model tokens. Samples cannot prove that omitted
+    records are correct. Original counts and omission metadata make that explicit.
     """
-    Summarizes large data payloads using head/tail sampling.
-    
-    Used by both the SDK (client-side) and API (server-side safety net)
-    to keep step inputs/outputs within the LLM's token context window.
-    """
-    
-    DEFAULT_MAX_PAYLOAD_SIZE = 80000   # chars per step side (~20K tokens)
+
+    DEFAULT_MAX_PAYLOAD_SIZE = 80000
     DEFAULT_SAMPLE_SIZE = 100
     DEFAULT_MIN_SAMPLE_SIZE = 10
     DEFAULT_STRING_TRUNCATE = 2000
-    
+
     def __init__(
         self,
         max_payload_size: int = DEFAULT_MAX_PAYLOAD_SIZE,
@@ -32,65 +25,78 @@ class Summarizer:
         min_sample_size: int = DEFAULT_MIN_SAMPLE_SIZE,
         string_truncate: int = DEFAULT_STRING_TRUNCATE,
     ):
-        self.max_payload_size = max_payload_size
-        self.sample_size = sample_size
-        self.min_sample_size = min_sample_size
-        self.string_truncate = string_truncate
-    
+        self.max_payload_size = positive_int(max_payload_size, "max_payload_size")
+        if max_payload_size < 64:
+            raise ValueError("max_payload_size must be at least 64 characters")
+        self.sample_size = positive_int(sample_size, "sample_size")
+        # Retained for compatibility; a hard budget may require fewer items.
+        self.min_sample_size = positive_int(min_sample_size, "min_sample_size")
+        self.string_truncate = positive_int(string_truncate, "string_truncate")
+
+    @staticmethod
+    def _size(data: Any) -> int:
+        return len(json.dumps(data, allow_nan=False))
+
+    @staticmethod
+    def _sample(items, count):
+        if len(items) <= count:
+            return items
+        head = (count + 1) // 2
+        tail = count // 2
+        return items[:head] + (items[-tail:] if tail else [])
+
     def ensure_within_budget(self, data: Any) -> Any:
-        """Return data as-is if small enough, otherwise summarize it."""
         if data is None:
             return {}
-        try:
-            size = len(json.dumps(data, default=str))
-        except Exception:
-            size = self.max_payload_size + 1
-        if size <= self.max_payload_size:
+        original_size = self._size(data)
+        if original_size <= self.max_payload_size:
             return data
-        logger.info("Summarizing large payload: %d chars -> MAX %d chars", size, self.max_payload_size)
-        summarized = self._summarize_with_budget(data)
-        new_size = len(json.dumps(summarized, default=str))
-        logger.info("Summarization complete: %d -> %d chars", size, new_size)
-        return summarized
-
-    def _summarize_with_budget(self, data: Any) -> Any:
-        """Iteratively summarize until payload fits under max_payload_size."""
-        sample_size = self.sample_size
-        summarized = data
+        count = self.sample_size
+        string_limit = self.string_truncate
         while True:
-            summarized = self._summarize_once(summarized, sample_size)
-            size = len(json.dumps(summarized, default=str))
-            if size <= self.max_payload_size or sample_size <= self.min_sample_size:
-                return summarized
-            sample_size = max(self.min_sample_size, sample_size // 2)
+            omissions = {"sampled": True, "original_chars": original_size}
+            result = self._project(data, count, string_limit, omissions)
+            # Never overwrite a caller's reserved-looking field.
+            if isinstance(result, dict) and "_xray_summary" not in result:
+                result["_xray_summary"] = omissions
+            else:
+                result = {"sample": result, "_xray_summary": omissions}
+            if self._size(result) <= self.max_payload_size:
+                return result
+            if count == 1 and string_limit == 1:
+                # Huge keys/deep shapes can still exceed budget. Explicitly omit
+                # the sample instead of silently returning an oversized value.
+                omitted = {"_xray_summary": {"omitted": True, "original_chars": original_size}}
+                if self._size(omitted) > self.max_payload_size:
+                    omitted = {"_xray_summary": {"omitted": True}}
+                return omitted
+            count = max(1, count // 2)
+            string_limit = max(1, string_limit // 2)
 
-    def _summarize_once(self, data: Any, sample_size: int) -> Any:
-        """One-pass summarization with recursion and string truncation."""
+    def _project(self, data: Any, count: int, string_limit: int, omissions: dict) -> Any:
         if isinstance(data, dict):
-            summarized = {}
-            for key, value in data.items():
-                if isinstance(value, list):
-                    summarized_list, total_count = self._summarize_list(value, sample_size)
-                    summarized[key] = summarized_list
-                    if total_count is not None:
-                        summarized[f"{key}_total_count"] = total_count
-                else:
-                    summarized[key] = self._summarize_once(value, sample_size)
-            return summarized
-        if isinstance(data, list):
-            summarized_list, _ = self._summarize_list(data, sample_size)
-            return summarized_list
-        if isinstance(data, str) and len(data) > self.string_truncate:
-            overflow = len(data) - self.string_truncate
-            return f"{data[:self.string_truncate]}...[truncated {overflow} chars]"
+            keys = list(data)
+            sampled_keys = self._sample(keys, count)
+            if len(sampled_keys) < len(keys):
+                omissions["omitted_fields"] = omissions.get("omitted_fields", 0) + len(keys) - len(sampled_keys)
+            result = {}
+            for key in sampled_keys:
+                value = data[key]
+                result[key] = self._project(value, count, string_limit, omissions)
+                if isinstance(value, (list, tuple)) and len(value) > count:
+                    count_key = f"{key}_total_count"
+                    if count_key not in data:
+                        result[count_key] = len(value)
+                    else:
+                        omissions["count_key_collisions"] = omissions.get("count_key_collisions", 0) + 1
+            return result
+        if isinstance(data, (list, tuple)):
+            sampled = self._sample(data, count)
+            if len(sampled) < len(data):
+                omissions["omitted_items"] = omissions.get("omitted_items", 0) + len(data) - len(sampled)
+                omissions.setdefault("original_items", len(data))
+            return [self._project(item, count, string_limit, omissions) for item in sampled]
+        if isinstance(data, str) and len(data) > string_limit:
+            omissions["truncated_strings"] = omissions.get("truncated_strings", 0) + 1
+            return f"{data[:string_limit]}...[truncated {len(data) - string_limit} chars]"
         return data
-
-    def _summarize_list(self, items: List[Any], sample_size: int) -> Tuple[List[Any], Optional[int]]:
-        """Summarize a list: sample if large, recurse into elements."""
-        total_count = None
-        if len(items) > sample_size:
-            total_count = len(items)
-            head_count = sample_size // 2
-            tail_count = sample_size - head_count
-            items = items[:head_count] + items[-tail_count:]
-        return [self._summarize_once(item, sample_size) for item in items], total_count

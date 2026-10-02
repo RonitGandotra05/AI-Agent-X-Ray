@@ -43,18 +43,33 @@ class Run(db.Model):
     steps = db.relationship('Step', backref='run', lazy='dynamic', order_by='Step.step_order')
     
     def to_dict(self, include_steps=False):
+        stored = self.storage_data()
         result = {
             "id": self.id,
             "pipeline_id": self.pipeline_id,
             "pipeline_name": self.pipeline.name if self.pipeline else None,
+            "pipeline_description": stored.get("pipeline_description", self.pipeline.description if self.pipeline else None),
             "status": self.status,
-            "metadata": self.run_metadata,
+            "metadata": stored.get("metadata", self.run_metadata),
             "analysis_result": self.analysis_result,
             "created_at": self.created_at.isoformat() if self.created_at else None
         }
         if include_steps:
             result["steps"] = [step.to_dict() for step in self.steps.order_by(Step.step_order)]
         return result
+
+    def storage_data(self):
+        """Read the versioned internal envelope, keeping older database rows readable."""
+        if isinstance(self.run_metadata, dict) and set(self.run_metadata) == {"_xray_storage"}:
+            envelope = self.run_metadata.get("_xray_storage")
+            if isinstance(envelope, dict):
+                fingerprint = envelope.get("fingerprint")
+                if (envelope.get("version") == 1 and isinstance(envelope.get("metadata"), dict)
+                        and isinstance(envelope.get("pipeline_description"), str)
+                        and isinstance(fingerprint, str) and len(fingerprint) == 64
+                        and all(char in "0123456789abcdef" for char in fingerprint)):
+                    return envelope
+        return {}
 
 
 class Step(db.Model):

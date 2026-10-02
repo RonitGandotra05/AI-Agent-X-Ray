@@ -9,10 +9,8 @@ from xray_api.models import db
 @pytest.fixture
 def app():
     """Create a test app with in-memory SQLite database."""
-    app = create_app()
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
-    app.config['TESTING'] = True
-    app.config['XRAY_API_KEY'] = None  # Disable auth for tests
+    app = create_app({'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:',
+                      'TESTING': True, 'XRAY_API_KEY': None})
     
     with app.app_context():
         db.create_all()

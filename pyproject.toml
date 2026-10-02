@@ -1,21 +1,66 @@
 [build-system]
-requires = ["setuptools>=69.0", "wheel"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "xray-sdk"
-version = "0.1.5"
+dynamic = ["version"]
 description = "Lightweight debugging SDK for multi-step AI pipelines."
-readme = { file = "README_SDK.md", content-type = "text/markdown" }
+readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.9"
-license = { text = "Proprietary" }
+license = "LicenseRef-Proprietary"
+license-files = []
 authors = [{ name = "Equal Collective" }]
-dependencies = [
-  "requests>=2.31.0",
+keywords = ["ai", "agents", "debugging", "observability", "llm"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Typing :: Typed",
+]
+dependencies = ["requests>=2.31.0"]
+
+[project.urls]
+Homepage = "https://github.com/RonitGandotra05/AI-Agent-X-Ray"
+Repository = "https://github.com/RonitGandotra05/AI-Agent-X-Ray"
+Issues = "https://github.com/RonitGandotra05/AI-Agent-X-Ray/issues"
+
+[project.optional-dependencies]
+server = [
+  "flask>=3.0.0",
+  "flask-sqlalchemy>=3.1.0",
+  "python-dotenv>=1.0.0",
+  "gunicorn>=21.2.0; platform_system != 'Windows'",
+]
+openai = ["openai>=1.55.3"]
+anthropic = ["anthropic>=0.40.0"]
+postgres = ["psycopg2-binary>=2.9.9"]
+langchain = [
+  "langchain-core>=0.2.0,<1.0; python_version < '3.10'",
+  "langchain-core>=0.2.0; python_version >= '3.10'",
+]
+dev = [
+  "pytest>=7.4.0",
+  "build>=1.2.0",
+  "twine>=5.0.0",
 ]
 
+[tool.setuptools.dynamic]
+version = { attr = "xray_sdk._version.__version__" }
+
 [tool.setuptools.packages.find]
-include = ["xray_sdk"]
+include = ["xray_sdk", "xray_sdk.*", "xray_shared", "xray_shared.*", "xray_api", "xray_api.*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+xray_sdk = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

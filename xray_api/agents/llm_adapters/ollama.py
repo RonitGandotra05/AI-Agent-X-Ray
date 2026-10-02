@@ -6,6 +6,7 @@ import os
 import requests
 from typing import List, Dict, Tuple
 from .base import LLMAdapter
+from .openai_compatible import provider_options
 
 
 class OllamaAdapter(LLMAdapter):
@@ -20,26 +21,37 @@ class OllamaAdapter(LLMAdapter):
     """
     
     def __init__(self):
-        self.base_url = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
+        self.base_url = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434').rstrip('/')
         self._model = os.getenv('OLLAMA_MODEL', 'llama3')
+        self.timeout, _ = provider_options()
+        self.session = requests.Session()
 
     def _make_request(self, messages, temperature, max_tokens):
         """Shared request logic for both completion methods."""
-        response = requests.post(
+        response = self.session.post(
             f"{self.base_url}/api/chat",
             json={
                 "model": self._model,
                 "messages": messages,
                 "stream": False,
+                "format": "json",
                 "options": {
                     "temperature": temperature,
                     "num_predict": max_tokens
                 }
             },
-            timeout=300  # Local models can be slow
+            timeout=self.timeout
         )
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        if not isinstance(data, dict) or data.get("done") is not True:
+            raise ValueError("Ollama returned an incomplete response")
+        if data.get("done_reason") not in (None, "stop"):
+            raise ValueError(f"Ollama response was incomplete ({data.get('done_reason')})")
+        content = data.get("message", {}).get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("Ollama returned empty text")
+        return data
     
     def chat_completion(
         self,
@@ -75,4 +87,3 @@ class OllamaAdapter(LLMAdapter):
     @property
     def model_name(self) -> str:
         return self._model
-

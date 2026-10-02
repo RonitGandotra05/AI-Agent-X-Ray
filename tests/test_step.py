@@ -1,6 +1,7 @@
 """Tests for XRayStep dataclass."""
 
 from xray_sdk.step import XRayStep
+import pytest
 
 
 class TestXRayStep:
@@ -46,3 +47,13 @@ class TestXRayStep:
         step = XRayStep(name="embed", order=4)
         assert "embed" in repr(step)
         assert "4" in repr(step)
+
+    @pytest.mark.parametrize("name,order", [("", 1), ("s", True), ("s", 0), ("s", -1), ("s", 1.0)])
+    def test_invalid_identifiers(self, name, order):
+        with pytest.raises(ValueError):
+            XRayStep(name, order)
+
+    def test_json_values_are_supported(self):
+        step = XRayStep("s", 1, inputs=[1, 2], outputs="done")
+        assert step.to_dict()["inputs"] == [1, 2]
+        assert step.to_dict()["outputs"] == "done"

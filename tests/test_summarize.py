@@ -62,8 +62,44 @@ class TestSummarizer:
         data = {"items": [{"id": i, "name": f"item_{i}" * 10} for i in range(100)]}
         result = tiny.ensure_within_budget(data)
         size = len(json.dumps(result, default=str))
-        # Should be at or near the budget (or at min sample size floor)
-        assert size <= 500  # generous upper bound since min_sample hits
+        assert size <= 100
+
+    def test_wide_dictionary_and_huge_keys_are_bounded(self):
+        for data in ({str(i): "x" * 200 for i in range(2000)}, {"k" * 2000: "x"}):
+            result = self.summarizer.ensure_within_budget(data)
+            assert len(json.dumps(result)) <= 1000
+            assert "_xray_summary" in result
+
+    def test_repeated_passes_preserve_original_list_count(self):
+        data = {"items": [{"data": "x" * 500} for _ in range(1000)]}
+        result = self.summarizer.ensure_within_budget(data)
+        assert result["items_total_count"] == 1000
+        assert result["_xray_summary"]["original_items"] == 1000
+
+    def test_user_count_field_is_not_overwritten(self):
+        data = {"items": ["a" * 50] * 100, "items_total_count": 999}
+        result = self.summarizer.ensure_within_budget(data)
+        assert result["items_total_count"] == 999
+        assert result["_xray_summary"]["count_key_collisions"] == 1
+
+    def test_head_tail_sampling_one_item_keeps_head(self):
+        result = Summarizer(max_payload_size=1000, sample_size=1).ensure_within_budget({"items": list(range(1000))})
+        assert result["items"] == [0]
+        assert result["items_total_count"] == 1000
+
+    def test_unicode_escaped_size_is_bounded(self):
+        result = self.summarizer.ensure_within_budget({"text": "🚀" * 10000})
+        assert len(json.dumps(result)) <= 1000
+
+    def test_input_is_never_modified(self):
+        data = {"items": list(range(1000))}
+        self.summarizer.ensure_within_budget(data)
+        assert len(data["items"]) == 1000
+        assert "items_total_count" not in data
+
+    def test_minimum_budget_is_strict(self):
+        result = Summarizer(max_payload_size=64).ensure_within_budget({"k" * 1000: "x"})
+        assert len(json.dumps(result)) <= 64
 
     def test_default_values(self):
         """Default Summarizer should have standard constants."""

@@ -1,25 +1,16 @@
-"""
-CrewAI integration for X-Ray SDK.
+"""Best-effort instrumentation of CrewAI synchronous task execution.
 
-Auto-captures agent tasks and tool calls from CrewAI crews.
-Attach the monitor before kickoff to capture everything.
-
-Usage:
-    from xray_sdk import XRayClient
-    from xray_sdk.integrations.crewai import XRayCrewMonitor
-
-    monitor = XRayCrewMonitor(pipeline_name="my_crew")
-    monitor.attach(crew)
-    crew.kickoff()
-
-    client = XRayClient("http://localhost:5000")
-    result = monitor.send(client)
-    print(result["analysis"])
+This adapter wraps writable ``execute_sync`` methods. It captures task results
+and failures, not individual tool calls or CrewAI asynchronous task execution.
+Use ``detach`` after the crew invocation to restore the original methods.
 """
 
-import time
+import functools
+import json
 import logging
-from typing import Any, Dict, List, Optional
+import threading
+import time
+from typing import Any, Dict, Optional
 
 from ..run import XRayRun
 from ..step import XRayStep
@@ -28,171 +19,112 @@ logger = logging.getLogger(__name__)
 
 
 class XRayCrewMonitor:
-    """
-    CrewAI monitor that auto-captures agent task execution as X-Ray steps.
-    
-    Hooks into CrewAI's task execution lifecycle to capture:
-    - Agent task start/end with inputs/outputs
-    - Tool usage within tasks
-    - Task delegation between agents
-    - Execution timing
-    
-    Works with CrewAI v0.28+ (both crewai and crewai-tools).
-    
-    Args:
-        pipeline_name: Name for this pipeline run
-        description: What this crew does
-        metadata: Additional metadata for the run
-        sample_size: Max items for summarization
-    """
-    
+    """Record synchronous task calls without a CrewAI runtime dependency."""
+
     def __init__(
-        self,
-        pipeline_name: str = "crewai_pipeline",
-        description: str = "",
-        metadata: Optional[Dict[str, Any]] = None,
-        sample_size: int = 100,
+        self, pipeline_name: str = "crewai_pipeline", description: str = "",
+        metadata: Optional[Dict[str, Any]] = None, sample_size: int = 100,
     ):
-        self.run = XRayRun(
-            pipeline_name=pipeline_name,
-            description=description,
-            metadata=metadata or {},
-            sample_size=sample_size,
-        )
+        self._config = dict(pipeline_name=pipeline_name, description=description, metadata=metadata, sample_size=sample_size)
+        self.run = XRayRun(**self._config)
         self._step_order = 0
         self._crew = None
-        self._original_execute_task = None
+        self._wrapped = []
+        self._lock = threading.RLock()
 
     def attach(self, crew: Any) -> "XRayCrewMonitor":
-        """
-        Attach this monitor to a CrewAI Crew instance.
-        
-        Monkey-patches the crew's task execution to capture steps.
-        Call this BEFORE crew.kickoff().
-        
-        Args:
-            crew: A CrewAI Crew instance
-            
-        Returns:
-            self (for chaining)
-        """
+        """Wrap supported tasks once; unsupported tasks are logged and skipped."""
+        if self._crew is crew:
+            return self
+        self.detach()
         self._crew = crew
-        self._wrap_tasks(crew)
+        tasks = getattr(crew, "tasks", None)
+        if tasks is None:
+            logger.warning("X-Ray CrewAI monitor found no tasks")
+            return self
+        for task in tasks:
+            original = getattr(task, "execute_sync", None)
+            if not callable(original):
+                logger.warning("X-Ray CrewAI monitor skipped a task without execute_sync")
+                continue
+            if getattr(task, "async_execution", False):
+                logger.warning("X-Ray CrewAI monitor does not capture asynchronous tasks")
+                continue
+            wrapper = self._wrapper(original, task)
+            try:
+                setattr(task, "execute_sync", wrapper)
+            except (AttributeError, TypeError, ValueError):
+                logger.warning("X-Ray CrewAI task method is not writable; use manual steps for this task")
+            else:
+                self._wrapped.append((task, original, wrapper))
         return self
 
-    def _wrap_tasks(self, crew: Any) -> None:
-        """Wrap each task's execute method to capture inputs/outputs."""
-        if not hasattr(crew, 'tasks'):
-            logger.warning("[xray] CrewAI crew has no tasks — nothing to monitor")
-            return
-        
-        for task in crew.tasks:
-            original_execute = task.execute_sync if hasattr(task, 'execute_sync') else None
-            if original_execute is None:
-                continue
-            
-            monitor = self
-            task_ref = task
+    def _wrapper(self, original: Any, task: Any) -> Any:
+        @functools.wraps(original)
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            started = time.monotonic()
+            agent = getattr(task, "agent", None)
+            role = str(getattr(agent, "role", "unknown_agent"))
+            description = str(getattr(task, "description", "") or "")
+            inputs = {
+                "task_description": description, "agent": role,
+                "expected_output": str(getattr(task, "expected_output", "") or ""),
+            }
+            context = getattr(task, "context", None)
+            if isinstance(context, (list, tuple)):
+                inputs["context_from"] = [str(getattr(item, "description", "") or "") for item in context[:5]]
+                inputs["context_count"] = len(context)
+            try:
+                result = original(*args, **kwargs)
+            except BaseException as exc:
+                self._capture(role, inputs, {"error": str(exc)}, started)
+                raise
+            self._capture(role, inputs, {"result": str(result) if result is not None else ""}, started)
+            return result
+        return wrapped
 
-            def make_wrapper(orig_fn, task_obj):
-                def wrapped(*args, **kwargs):
-                    start_time = time.time()
-                    agent_name = getattr(task_obj.agent, 'role', 'unknown_agent') if task_obj.agent else 'unknown_agent'
-                    task_desc = getattr(task_obj, 'description', '') or ''
-                    step_inputs = {
-                        "task_description": task_desc[:1000],
-                        "agent": agent_name,
-                        "expected_output": getattr(task_obj, 'expected_output', '')[:500],
-                    }
-                    
-                    # Add context from dependent tasks if available
-                    context_tasks = getattr(task_obj, 'context', []) or []
-                    if context_tasks:
-                        step_inputs["context_from"] = [
-                            getattr(ct, 'description', '')[:200] for ct in context_tasks[:5]
-                        ]
-                    
-                    try:
-                        result = orig_fn(*args, **kwargs)
-                        duration_ms = int((time.time() - start_time) * 1000)
-                        
-                        monitor._step_order += 1
-                        output_str = str(result)[:2000] if result else ""
-                        
-                        monitor.run.add_step(XRayStep(
-                            name=f"agent:{agent_name}",
-                            order=monitor._step_order,
-                            description=f"CrewAI task executed by {agent_name}: {task_desc[:100]}",
-                            inputs=step_inputs,
-                            outputs={"result": output_str},
-                            metrics={"duration_ms": duration_ms},
-                        ))
-                        return result
-                        
-                    except Exception as e:
-                        duration_ms = int((time.time() - start_time) * 1000)
-                        monitor._step_order += 1
-                        monitor.run.add_step(XRayStep(
-                            name=f"agent:{agent_name}",
-                            order=monitor._step_order,
-                            description=f"CrewAI task (FAILED) by {agent_name}: {task_desc[:100]}",
-                            inputs=step_inputs,
-                            outputs={"error": str(e)[:1000]},
-                            metrics={"duration_ms": duration_ms},
-                        ))
-                        raise
-                
-                return wrapped
-            
-            task.execute_sync = make_wrapper(original_execute, task)
+    def _capture(self, role: str, inputs: Dict[str, Any], outputs: Dict[str, Any], started: float) -> None:
+        try:
+            self.add_step(
+                name=f"agent:{role}", inputs=inputs, outputs=outputs,
+                description=f"CrewAI task executed by {role}",
+                metrics={"duration_ms": int((time.monotonic() - started) * 1000)},
+            )
+        except Exception:
+            logger.warning("X-Ray could not capture a CrewAI task", exc_info=True)
+
+    def detach(self) -> None:
+        """Restore methods still owned by this monitor without overwriting other wrappers."""
+        for task, original, wrapper in self._wrapped:
+            if getattr(task, "execute_sync", None) is wrapper:
+                try:
+                    setattr(task, "execute_sync", original)
+                except (AttributeError, TypeError, ValueError):
+                    logger.warning("X-Ray could not restore a CrewAI task method")
+        self._wrapped.clear()
+        self._crew = None
 
     def add_step(
-        self,
-        name: str,
-        inputs: Dict[str, Any],
-        outputs: Dict[str, Any],
-        description: str = "",
-        **kwargs: Any,
+        self, name: str, inputs: Dict[str, Any], outputs: Dict[str, Any],
+        description: str = "", **kwargs: Any,
     ) -> None:
-        """
-        Manually add a step (useful for pre/post-processing around the crew).
-        
-        Args:
-            name: Step name
-            inputs: Step inputs
-            outputs: Step outputs
-            description: What this step does
-        """
-        self._step_order += 1
-        self.run.add_step(XRayStep(
-            name=name,
-            order=self._step_order,
-            description=description,
-            inputs=inputs,
-            outputs=outputs,
-            **kwargs,
-        ))
+        with self._lock:
+            self._step_order += 1
+            self.run.add_step(XRayStep(
+                name=name, order=self._step_order, description=description,
+                inputs=json.loads(json.dumps(inputs, default=str)),
+                outputs=json.loads(json.dumps(outputs, default=str)), **kwargs,
+            ))
 
     def send(self, client: Any, analyze: bool = True) -> Dict[str, Any]:
-        """
-        Send the captured run to the X-Ray API.
-        
-        Args:
-            client: XRayClient instance
-            analyze: Whether to trigger analysis
-            
-        Returns:
-            API response with analysis result
-        """
         if not self.run.steps:
             return {"error": "No steps were captured. Did the crew run?"}
         return client.send(self.run, analyze=analyze)
 
     def get_run(self) -> XRayRun:
-        """Return the captured XRayRun for manual inspection."""
         return self.run
 
     def reset(self) -> None:
-        """Reset to capture a new run with the same config."""
-        self.run.steps.clear()
-        self._step_order = 0
+        with self._lock:
+            self.run = XRayRun(**self._config)
+            self._step_order = 0
