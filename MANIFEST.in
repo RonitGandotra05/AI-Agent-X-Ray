@@ -1,0 +1,5 @@
+include README.md README_SDK.md ARCHITECTURE.md CONTRIBUTING.md AUDIT.md requirements.txt
+include .env.example render.yaml
+recursive-include tests *.py
+recursive-include scripts *.py
+recursive-include examples *.py

@@ -1,0 +1,46 @@
+name: Test and build
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install test dependencies
+        run: python -m pip install '.[server,openai,anthropic,postgres,langchain,dev]'
+      - name: Run tests
+        run: python -m pytest
+      - name: Build wheel from source distribution and check metadata
+        run: |
+          python -m build
+          python -m twine check --strict dist/*
+      - name: Verify clean SDK installation
+        run: |
+          python -m venv "$RUNNER_TEMP/xray-sdk-smoke"
+          "$RUNNER_TEMP/xray-sdk-smoke/bin/python" -m pip install dist/*.whl
+          "$RUNNER_TEMP/xray-sdk-smoke/bin/python" -I scripts/smoke_installed.py
+      - name: Verify server and LangChain extras from installed wheel
+        run: |
+          "$RUNNER_TEMP/xray-sdk-smoke/bin/python" -m pip install "$(find dist -name '*.whl' -print -quit)[server,langchain]"
+          "$RUNNER_TEMP/xray-sdk-smoke/bin/python" -I scripts/smoke_installed.py --server --langchain
+      - name: Verify source distribution installation
+        run: |
+          python -m venv "$RUNNER_TEMP/xray-sdist-smoke"
+          "$RUNNER_TEMP/xray-sdist-smoke/bin/python" -m pip install dist/*.tar.gz
+          "$RUNNER_TEMP/xray-sdist-smoke/bin/python" -I scripts/smoke_installed.py

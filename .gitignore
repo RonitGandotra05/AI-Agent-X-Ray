@@ -39,3 +39,10 @@ env/
 
 # Logs
 *.log
+
+# Test artifacts and local databases
+.pytest_cache/
+.coverage
+htmlcov/
+instance/
+*.db
